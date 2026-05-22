@@ -2,6 +2,7 @@ import { segmentIsnad } from "./segment";
 import { findCandidates, type NarratorCandidate } from "./candidates";
 import { callClaude } from "../claude";
 import { getCached, setCached, inputHash } from "./cache";
+import { checkLink, type LinkStatus } from "./chronology";
 
 export type MatchStatus = "matched" | "needs_review" | "not_found";
 export type Confidence = "high" | "medium" | "low";
@@ -17,8 +18,20 @@ export interface MatchedNarrator {
   candidates: NarratorCandidate[];
 }
 
+export type ChainVerdict = "trustworthy_candidate" | "broken" | "needs_review";
+
+export interface ChainLink {
+  from_position: number;
+  to_position: number;
+  status: LinkStatus;
+  reason: string;
+}
+
 export interface MatchResult {
   narrators: MatchedNarrator[];
+  links: ChainLink[];
+  chain_verdict: ChainVerdict;
+  chain_reason: string;
 }
 
 interface Decision {
@@ -58,6 +71,64 @@ function normalizeConfidence(value: string | undefined): Confidence {
   return value === "high" || value === "medium" || value === "low"
     ? value
     : "low";
+}
+
+const RELIABLE_GRADES = new Set(["companion", "reliable", "mostly_reliable"]);
+
+function computeLinks(narrators: MatchedNarrator[]): ChainLink[] {
+  const links: ChainLink[] = [];
+  for (let i = 0; i < narrators.length - 1; i++) {
+    const student = narrators[i].narrator;
+    const teacher = narrators[i + 1].narrator;
+    if (!student || !teacher) {
+      links.push({
+        from_position: i,
+        to_position: i + 1,
+        status: "unknown",
+        reason: "أحد الراويين لم يُعرَف.",
+      });
+      continue;
+    }
+    const r = checkLink(
+      { death: student.death },
+      { death: teacher.death },
+    );
+    links.push({
+      from_position: i,
+      to_position: i + 1,
+      status: r.status,
+      reason: r.reason,
+    });
+  }
+  return links;
+}
+
+function chainVerdict(
+  narrators: MatchedNarrator[],
+  links: ChainLink[],
+): { verdict: ChainVerdict; reason: string } {
+  if (links.some((l) => l.status === "impossible")) {
+    return {
+      verdict: "broken",
+      reason: "السلسلة منقطعة — يوجد انقطاع زمني محقّق بين بعض الرواة.",
+    };
+  }
+  const allMatched = narrators.every((n) => n.status === "matched");
+  const allReliable = narrators.every(
+    (n) =>
+      n.narrator && RELIABLE_GRADES.has(n.narrator.grade_en ?? ""),
+  );
+  const allLinksConfirmed = links.every((l) => l.status === "possible");
+  if (allMatched && allReliable && allLinksConfirmed) {
+    return {
+      verdict: "trustworthy_candidate",
+      reason: "كل الرواة معروفون وموثَّقون، والاتصال محتمل بين كل طبقتين.",
+    };
+  }
+  return {
+    verdict: "needs_review",
+    reason: "السلسلة تحتاج إلى مراجعة — راجع الرواة والروابط.",
+  };
 }
 
 /**
@@ -137,7 +208,14 @@ export async function matchChain(rawText: string): Promise<MatchResult> {
     };
   });
 
-  const result: MatchResult = { narrators };
+  const links = computeLinks(narrators);
+  const { verdict, reason } = chainVerdict(narrators, links);
+  const result: MatchResult = {
+    narrators,
+    links,
+    chain_verdict: verdict,
+    chain_reason: reason,
+  };
   await setCached(hash, result);
   return result;
 }

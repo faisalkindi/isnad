@@ -7,6 +7,7 @@ export interface NarratorCandidate {
   grade_en: string | null;
   grade_ar: string | null;
   tabaqat: string | null;
+  death: string | null;
   score: number;
 }
 
@@ -33,14 +34,14 @@ export async function findCandidates(
   if (normalized.length === 0) return [];
 
   const res = await query<CandidateRow>(
-    `SELECT n.id, n.full_name, n.grade_en, n.grade_ar, n.tabaqat,
+    `SELECT n.id, n.full_name, n.grade_en, n.grade_ar, n.tabaqat, n.death,
             max(similarity(nv.normalized_variant, $1)) AS score,
             (SELECT count(*) FROM source_grade sg WHERE sg.narrator_id = n.id)
               AS prominence
      FROM name_variant nv
      JOIN narrator n ON n.id = nv.narrator_id
      WHERE nv.normalized_variant % $1
-     GROUP BY n.id, n.full_name, n.grade_en, n.grade_ar, n.tabaqat
+     GROUP BY n.id, n.full_name, n.grade_en, n.grade_ar, n.tabaqat, n.death
      ORDER BY score DESC, prominence DESC
      LIMIT $2`,
     [normalized, limit],
@@ -52,6 +53,7 @@ export async function findCandidates(
     grade_en: r.grade_en,
     grade_ar: r.grade_ar,
     tabaqat: r.tabaqat,
+    death: r.death,
     score: Number(r.score),
   }));
 }

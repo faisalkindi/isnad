@@ -1,11 +1,35 @@
 "use client";
 
 import { useState } from "react";
-import type { MatchResult } from "@/lib/match/matcher";
+import type { ChainVerdict, MatchResult } from "@/lib/match/matcher";
 import { ChainView } from "@/components/ChainView";
 import { NarratorCard } from "@/components/NarratorCard";
 
 const EXAMPLE = "حدثنا مالك عن نافع عن ابن عمر";
+
+const VERDICT_STYLE: Record<
+  ChainVerdict,
+  { bg: string; text: string; label: string; symbol: string }
+> = {
+  trustworthy_candidate: {
+    bg: "bg-emerald-100 border-emerald-300",
+    text: "text-emerald-900",
+    label: "سلسلة محتملة الاتصال، رجالها موثَّقون",
+    symbol: "✓",
+  },
+  broken: {
+    bg: "bg-red-100 border-red-300",
+    text: "text-red-900",
+    label: "سلسلة منقطعة",
+    symbol: "✗",
+  },
+  needs_review: {
+    bg: "bg-amber-100 border-amber-300",
+    text: "text-amber-900",
+    label: "السلسلة تحتاج إلى مراجعة",
+    symbol: "⚠",
+  },
+};
 
 export default function HomePage() {
   const [isnad, setIsnad] = useState("");
@@ -46,8 +70,8 @@ export default function HomePage() {
     <main dir="rtl" className="mx-auto w-full max-w-3xl px-4 py-8">
       <h1 className="text-2xl font-bold">مدقّق الإسناد</h1>
       <p className="mt-1 text-sm text-gray-600">
-        الصق سند حديث — سيتعرّف التطبيق على كل راوٍ ويعرض ما سجّله العلماء عنه،
-        دون أن يصدر حكمًا على الحديث.
+        الصق سند حديث — سيتعرّف التطبيق على كل راوٍ، ويعرض حكم العلماء عليه،
+        ويختبر الاتصال الزمني بين كل طبقتين.
       </p>
 
       <textarea
@@ -91,13 +115,31 @@ export default function HomePage() {
             <p className="text-gray-600">لم يُعثر على رواة في هذا النص.</p>
           ) : (
             <>
-              <h2 className="text-lg font-semibold">السلسلة</h2>
+              {/* Chain-level verdict */}
+              {(() => {
+                const v = VERDICT_STYLE[result.chain_verdict];
+                return (
+                  <div
+                    className={`rounded-xl border ${v.bg} ${v.text} p-4`}
+                  >
+                    <div className="flex items-center gap-2 text-lg font-bold">
+                      <span aria-hidden>{v.symbol}</span>
+                      <span>{v.label}</span>
+                    </div>
+                    <p className="mt-1 text-sm">{result.chain_reason}</p>
+                  </div>
+                );
+              })()}
+
+              <h2 className="mt-6 text-lg font-semibold">السلسلة</h2>
               <div className="mt-2">
                 <ChainView
                   narrators={result.narrators}
+                  links={result.links}
                   onSelect={scrollToCard}
                 />
               </div>
+
               <div className="mt-6 space-y-4">
                 {result.narrators.map((n) => (
                   <div key={n.position} id={`narrator-${n.position}`}>
