@@ -1,65 +1,121 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState } from "react";
+import type { MatchResult } from "@/lib/match/matcher";
+import { ChainView } from "@/components/ChainView";
+import { NarratorCard } from "@/components/NarratorCard";
+
+const EXAMPLE = "حدثنا مالك عن نافع عن ابن عمر";
+
+export default function HomePage() {
+  const [isnad, setIsnad] = useState("");
+  const [result, setResult] = useState<MatchResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function audit() {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await fetch("/api/audit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ isnad }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(body.error ?? "Something went wrong.");
+        return;
+      }
+      setResult(body as MatchResult);
+    } catch {
+      setError("Could not reach the server. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function scrollToCard(position: number) {
+    document
+      .getElementById(`narrator-${position}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="mx-auto w-full max-w-3xl px-4 py-8">
+      <h1 className="text-2xl font-bold" dir="rtl">
+        مدقّق الإسناد
+      </h1>
+      <p className="mt-1 text-sm text-gray-600">
+        Paste a hadith isnād (chain of narrators). The app identifies each
+        narrator and shows what the classical books recorded — it does not rule
+        on the hadith.
+      </p>
+
+      <textarea
+        dir="rtl"
+        value={isnad}
+        onChange={(e) => setIsnad(e.target.value)}
+        placeholder="… الصق الإسناد هنا"
+        rows={4}
+        className="mt-4 w-full rounded-lg border border-gray-300 p-3 text-lg"
+      />
+
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          onClick={audit}
+          disabled={loading || isnad.trim().length === 0}
+          className="rounded-lg bg-emerald-700 px-4 py-2 text-white disabled:opacity-40"
+        >
+          {loading ? "…جارٍ الفحص" : "افحص الإسناد"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setIsnad(EXAMPLE)}
+          className="rounded-lg border border-gray-300 px-4 py-2"
+        >
+          مثال
+        </button>
+      </div>
+
+      {error && (
+        <div className="mt-4 rounded-lg border border-red-300 bg-red-50 p-3 text-red-800">
+          {error}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      )}
+
+      {loading && <p className="mt-6 text-gray-500">…جارٍ تحليل السلسلة</p>}
+
+      {result && (
+        <section className="mt-8">
+          {result.narrators.length === 0 ? (
+            <p className="text-gray-600">
+              No narrators were found in this text.
+            </p>
+          ) : (
+            <>
+              <h2 className="text-lg font-semibold" dir="rtl">
+                السلسلة
+              </h2>
+              <div className="mt-2">
+                <ChainView
+                  narrators={result.narrators}
+                  onSelect={scrollToCard}
+                />
+              </div>
+              <div className="mt-6 space-y-4">
+                {result.narrators.map((n) => (
+                  <div key={n.position} id={`narrator-${n.position}`}>
+                    <NarratorCard matched={n} />
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      )}
+    </main>
   );
 }
