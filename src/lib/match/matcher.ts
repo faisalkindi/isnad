@@ -1,6 +1,7 @@
 import { segmentIsnad } from "./segment";
 import { findCandidates, type NarratorCandidate } from "./candidates";
 import { callClaude } from "../claude";
+import { getCached, setCached, inputHash } from "./cache";
 
 export type MatchStatus = "matched" | "needs_review" | "not_found";
 export type Confidence = "high" | "medium" | "low";
@@ -67,6 +68,10 @@ function normalizeConfidence(value: string | undefined): Confidence {
  * flagged for human review.
  */
 export async function matchChain(rawText: string): Promise<MatchResult> {
+  const hash = inputHash(rawText);
+  const cached = await getCached(hash);
+  if (cached) return cached;
+
   const fragments = await segmentIsnad(rawText);
 
   const candidatesPerPosition = await Promise.all(
@@ -132,5 +137,7 @@ export async function matchChain(rawText: string): Promise<MatchResult> {
     };
   });
 
-  return { narrators };
+  const result: MatchResult = { narrators };
+  await setCached(hash, result);
+  return result;
 }
