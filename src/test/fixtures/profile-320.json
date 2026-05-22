@@ -1,0 +1,119 @@
+{
+  "id": 320,
+  "full_name": "سعيد بن سماك بن حرب",
+  "kunya": "أبي خزامة",
+  "grade_en": "abandoned",
+  "grade_ar": "متروك الحديث",
+  "color": "#c0392b",
+  "death": "-",
+  "tabaqat": "-",
+  "city": "-",
+  "laqab": "-",
+  "nasab": "-",
+  "dhahabi": "-",
+  "namings": [
+    "ابن السماك بن حرب",
+    "ابن سماك بن حرب",
+    "سعيد بن سماك بن حرب",
+    "سعيد بن سماك بن حرب بن أوس بن خالد بن نزار بن معاوية بن حارثة بن ربيعة بن عامر بن ذهل بن ثعلبة",
+    "سعيد بن سماك الذهلي"
+  ],
+  "classical_sources": {
+    "mizan": {
+      "entry_id": 3208,
+      "grade_en": "abandoned",
+      "grade_ar": "متروك الحديث"
+    },
+    "lisan_mizan": {
+      "entry_id": 3433,
+      "grade_en": "abandoned",
+      "grade_ar": "متروك الحديث"
+    },
+    "jarh": {
+      "entry_id": 133,
+      "grade_en": "abandoned",
+      "grade_ar": "متروك"
+    },
+    "thiqat": {
+      "entry_id": 8134,
+      "grade_en": "reliable",
+      "grade_ar": "ذكره ابن حبان في الثقات"
+    },
+    "mughni_ducafa": {
+      "entry_id": 2408,
+      "grade_en": "abandoned",
+      "grade_ar": "متروك"
+    },
+    "diwan_ducafa": {
+      "entry_id": 1615,
+      "grade_en": "abandoned",
+      "grade_ar": "متروك"
+    }
+  },
+  "teachers": [
+    2325,
+    7019
+  ],
+  "students": [
+    319,
+    1142,
+    2790
+  ],
+  "id_score": 70,
+  "grade_score": 45,
+  "confidence": "B",
+  "id_flags": [
+    "good_nasab",
+    "has_kunya",
+    "unique_name",
+    "multi_source"
+  ],
+  "grade_flags": [
+    "source_graded"
+  ],
+  "provenance": {
+    "origin": "classical",
+    "sources": [
+      {
+        "type": "mizan",
+        "entry_id": 3208,
+        "grade": "abandoned"
+      },
+      {
+        "type": "lisan_mizan",
+        "entry_id": 3433,
+        "grade": "abandoned"
+      },
+      {
+        "type": "jarh",
+        "entry_id": 133,
+        "grade": "abandoned"
+      },
+      {
+        "type": "thiqat",
+        "entry_id": 8134,
+        "grade": "reliable"
+      },
+      {
+        "type": "mughni_ducafa",
+        "entry_id": 2408,
+        "grade": "abandoned"
+      },
+      {
+        "type": "diwan_ducafa",
+        "entry_id": 1615,
+        "grade": "abandoned"
+      }
+    ],
+    "arsanad_id": 320,
+    "source_count": 6,
+    "introduced_via": {
+      "teacher_count": 1,
+      "student_count": 3
+    }
+  },
+  "unique_key": "سعيد بن سماك بن حرب",
+  "uniqueness": "name_unique",
+  "gk_id": 17988,
+  "gk_match_method": "prefix3_unique"
+}
