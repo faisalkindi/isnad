@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "مدقّق الإسناد — Isnād Reference",
-  description: "Look up hadith narrators and visualize chains of transmission.",
+  title: "مدقّق الإسناد",
+  description: "ابحث عن رواة الحديث وارسم سلاسل الإسناد.",
 };
 
 export default function RootLayout({

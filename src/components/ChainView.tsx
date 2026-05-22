@@ -6,15 +6,15 @@ const STATUS_DOT: Record<string, string> = {
   not_found: "bg-gray-400",
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  matched: "identified",
-  needs_review: "needs review",
-  not_found: "not identified",
+const STATUS_LABEL_AR: Record<string, string> = {
+  matched: "تم التعرّف",
+  needs_review: "بحاجة إلى مراجعة",
+  not_found: "لم يُعرَف",
 };
 
 /**
- * The pasted chain drawn as a row of narrator nodes (RTL). Plain DOM, so it
- * is keyboard-navigable and screen-reader friendly with no canvas fallback.
+ * The pasted chain drawn as a row of narrator nodes (RTL). Plain DOM, so it is
+ * keyboard-navigable and screen-reader friendly with no canvas fallback.
  */
 export function ChainView({
   narrators,
@@ -31,14 +31,14 @@ export function ChainView({
             type="button"
             onClick={() => onSelect(n.position)}
             className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm hover:border-gray-600"
-            title={STATUS_LABEL[n.status]}
+            title={STATUS_LABEL_AR[n.status]}
           >
             <span
               className={`me-2 inline-block h-2 w-2 rounded-full align-middle ${STATUS_DOT[n.status]}`}
               aria-hidden
             />
             <span dir="rtl">{n.narrator?.full_name ?? n.fragment}</span>
-            <span className="sr-only"> ({STATUS_LABEL[n.status]})</span>
+            <span className="sr-only"> ({STATUS_LABEL_AR[n.status]})</span>
           </button>
           {i < narrators.length - 1 && (
             <span className="text-gray-400" aria-hidden>

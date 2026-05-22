@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
 
   if (!name || name.trim().length === 0) {
     return NextResponse.json(
-      { error: "missing 'name' query parameter" },
+      { error: "يجب تمرير المعامل name." },
       { status: 400 },
     );
   }

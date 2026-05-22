@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   if (!checkRate(ip)) {
     return NextResponse.json(
-      { error: "Too many requests — please wait a moment and try again." },
+      { error: "طلبات كثيرة — انتظر قليلًا ثم حاول مرة أخرى." },
       { status: 429 },
     );
   }
@@ -21,16 +21,16 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+    return NextResponse.json({ error: "صيغة الطلب غير صالحة." }, { status: 400 });
   }
 
   const isnad = body.isnad;
   if (typeof isnad !== "string" || isnad.trim().length === 0) {
-    return NextResponse.json({ error: "Please paste an isnād." }, { status: 400 });
+    return NextResponse.json({ error: "الرجاء لصق الإسناد." }, { status: 400 });
   }
   if (isnad.length > MAX_LENGTH) {
     return NextResponse.json(
-      { error: `Isnād is too long (limit ${MAX_LENGTH} characters).` },
+      { error: `الإسناد طويل جدًا (الحد الأقصى ${MAX_LENGTH} حرف).` },
       { status: 400 },
     );
   }
@@ -41,13 +41,13 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     if (err instanceof BudgetExceededError) {
       return NextResponse.json(
-        { error: "The service is busy right now. Please try again later." },
+        { error: "الخدمة مشغولة الآن — حاول لاحقًا." },
         { status: 503 },
       );
     }
     if (err instanceof ParseError) {
       return NextResponse.json(
-        { error: "This does not look like an isnād. Please check the text." },
+        { error: "النص لا يبدو إسنادًا — تحقّق منه." },
         { status: 422 },
       );
     }

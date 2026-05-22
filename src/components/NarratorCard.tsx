@@ -4,16 +4,25 @@ import { useEffect, useState } from "react";
 import type { MatchedNarrator } from "@/lib/match/matcher";
 import type { NarratorDetail } from "@/lib/narrator";
 import { gradeStyle } from "@/lib/grades";
+import { sourceBookAr } from "@/lib/sources";
 
-/** Render a field value, treating Itqan's "-" / null as "not recorded". */
+/** Treat Itqan's "-" / null as "غير مذكور". */
 function field(value: string | null): string {
-  return value && value !== "-" ? value : "not recorded";
+  return value && value !== "-" ? value : "غير مذكور";
 }
+
+const CONFIDENCE_AR: Record<string, string> = {
+  high: "ثقة عالية",
+  medium: "ثقة متوسطة",
+  low: "ثقة منخفضة",
+};
 
 function GradeBadge({ gradeEn }: { gradeEn: string | null }) {
   const style = gradeStyle(gradeEn);
   return (
-    <span className={`rounded px-2 py-0.5 text-xs font-medium ${style.className}`}>
+    <span
+      className={`rounded px-2 py-0.5 text-xs font-medium ${style.className}`}
+    >
       {style.label}
     </span>
   );
@@ -50,11 +59,11 @@ export function NarratorCard({ matched }: { matched: MatchedNarrator }) {
   const userCorrected = chosenId !== (matched.narrator?.id ?? null);
 
   return (
-    <article className="rounded-xl border border-gray-300 bg-white p-4">
+    <article dir="rtl" className="rounded-xl border border-gray-300 bg-white p-4">
       <header className="flex items-baseline justify-between gap-2">
         <span className="text-xs text-gray-500">
-          Position {matched.position + 1} — pasted as “
-          <span dir="rtl">{matched.fragment}</span>”
+          الموضع {matched.position + 1} — كما ورد: «
+          <span dir="rtl">{matched.fragment}</span>»
         </span>
         {chosenId != null && (
           <button
@@ -62,7 +71,7 @@ export function NarratorCard({ matched }: { matched: MatchedNarrator }) {
             onClick={() => setPicking((p) => !p)}
             className="text-xs text-emerald-700 underline"
           >
-            {picking ? "close" : "change narrator"}
+            {picking ? "إغلاق" : "غيّر الراوي"}
           </button>
         )}
       </header>
@@ -70,7 +79,7 @@ export function NarratorCard({ matched }: { matched: MatchedNarrator }) {
       {/* Identified narrator */}
       {chosenId != null && !picking && (
         <div className="mt-2">
-          {loading && <p className="text-sm text-gray-500">Loading…</p>}
+          {loading && <p className="text-sm text-gray-500">جارٍ التحميل…</p>}
           {!loading && detail && (
             <>
               <div className="flex flex-wrap items-center gap-2">
@@ -86,29 +95,31 @@ export function NarratorCard({ matched }: { matched: MatchedNarrator }) {
               </div>
 
               <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                <dt className="text-gray-500">Generation (ṭabaqa)</dt>
+                <dt className="text-gray-500">الطبقة</dt>
                 <dd dir="rtl">{field(detail.tabaqat)}</dd>
-                <dt className="text-gray-500">Death</dt>
+                <dt className="text-gray-500">الوفاة</dt>
                 <dd dir="rtl">{field(detail.death)}</dd>
-                <dt className="text-gray-500">City</dt>
+                <dt className="text-gray-500">المدينة</dt>
                 <dd dir="rtl">{field(detail.city)}</dd>
-                <dt className="text-gray-500">Match</dt>
+                <dt className="text-gray-500">حالة المطابقة</dt>
                 <dd>
                   {userCorrected
-                    ? "your selection"
-                    : `auto-matched (${matched.confidence ?? "—"} confidence)`}
+                    ? "اختيارك"
+                    : `مطابقة آلية (${
+                        CONFIDENCE_AR[matched.confidence ?? ""] ?? "—"
+                      })`}
                 </dd>
               </dl>
 
               {detail.sourceGrades.length > 0 && (
                 <div className="mt-3">
-                  <p className="text-sm font-medium">
-                    Grade by classical text
-                  </p>
+                  <p className="text-sm font-medium">التصنيف في كل كتاب</p>
                   <ul className="mt-1 space-y-0.5 text-sm">
                     {detail.sourceGrades.map((g, i) => (
                       <li key={i} className="flex justify-between gap-3">
-                        <span className="text-gray-500">{g.source_book}</span>
+                        <span className="text-gray-500">
+                          {sourceBookAr(g.source_book)}
+                        </span>
                         <span dir="rtl">{g.grade_ar ?? g.grade_en ?? "—"}</span>
                       </li>
                     ))}
@@ -119,7 +130,7 @@ export function NarratorCard({ matched }: { matched: MatchedNarrator }) {
               {detail.nameVariants.length > 0 && (
                 <details className="mt-3 text-sm">
                   <summary className="cursor-pointer text-gray-600">
-                    Name variants ({detail.nameVariants.length})
+                    صور الاسم ({detail.nameVariants.length})
                   </summary>
                   <ul className="mt-1 space-y-0.5" dir="rtl">
                     {detail.nameVariants.map((v, i) => (
@@ -132,7 +143,7 @@ export function NarratorCard({ matched }: { matched: MatchedNarrator }) {
           )}
           {!loading && !detail && (
             <p className="text-sm text-red-700">
-              Could not load this narrator&apos;s record.
+              تعذّر تحميل بيانات هذا الراوي.
             </p>
           )}
         </div>
@@ -144,8 +155,8 @@ export function NarratorCard({ matched }: { matched: MatchedNarrator }) {
           {chosenId == null && (
             <p className="text-sm text-gray-600">
               {matched.candidates.length === 0
-                ? "This narrator could not be identified in the database."
-                : "This match needs review — choose the intended narrator:"}
+                ? "تعذّر التعرّف على هذا الراوي."
+                : "تحتاج هذه المطابقة إلى مراجعة — اختر الراوي المقصود:"}
             </p>
           )}
           {matched.candidates.length > 0 && (

@@ -25,12 +25,12 @@ export default function HomePage() {
       });
       const body = await res.json();
       if (!res.ok) {
-        setError(body.error ?? "Something went wrong.");
+        setError(body.error ?? "حدث خطأ ما.");
         return;
       }
       setResult(body as MatchResult);
     } catch {
-      setError("Could not reach the server. Please try again.");
+      setError("تعذّر الاتصال بالخادم — حاول مرة أخرى.");
     } finally {
       setLoading(false);
     }
@@ -43,14 +43,11 @@ export default function HomePage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-8">
-      <h1 className="text-2xl font-bold" dir="rtl">
-        مدقّق الإسناد
-      </h1>
+    <main dir="rtl" className="mx-auto w-full max-w-3xl px-4 py-8">
+      <h1 className="text-2xl font-bold">مدقّق الإسناد</h1>
       <p className="mt-1 text-sm text-gray-600">
-        Paste a hadith isnād (chain of narrators). The app identifies each
-        narrator and shows what the classical books recorded — it does not rule
-        on the hadith.
+        الصق سند حديث — سيتعرّف التطبيق على كل راوٍ ويعرض ما سجّله العلماء عنه،
+        دون أن يصدر حكمًا على الحديث.
       </p>
 
       <textarea
@@ -91,14 +88,10 @@ export default function HomePage() {
       {result && (
         <section className="mt-8">
           {result.narrators.length === 0 ? (
-            <p className="text-gray-600">
-              No narrators were found in this text.
-            </p>
+            <p className="text-gray-600">لم يُعثر على رواة في هذا النص.</p>
           ) : (
             <>
-              <h2 className="text-lg font-semibold" dir="rtl">
-                السلسلة
-              </h2>
+              <h2 className="text-lg font-semibold">السلسلة</h2>
               <div className="mt-2">
                 <ChainView
                   narrators={result.narrators}
