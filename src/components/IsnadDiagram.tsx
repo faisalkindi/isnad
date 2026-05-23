@@ -120,10 +120,10 @@ function NarratorRow({
           {displayNumber}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-lg font-semibold">
+          <div className="text-lg font-bold text-gray-900">
             {matched.narrator?.full_name}
           </div>
-          <div className="text-sm text-gray-600">المصدر — توفي 11 هـ</div>
+          <div className="text-sm text-gray-700">المصدر — توفي 11 هـ</div>
         </div>
       </div>
     );
@@ -180,33 +180,33 @@ function NarratorRow({
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="truncate text-lg font-semibold">
+          <div className="truncate text-lg font-bold text-gray-900">
             {displayedName}
           </div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-gray-600">
-            <span>{gradeLabel(grade)}</span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-gray-700">
+            <span className="font-medium">{gradeLabel(grade)}</span>
             {death && <span>ت {death}</span>}
             {tabaqat && <span>{tabaqat}</span>}
             {matched.status === "needs_review" && (
-              <span className="text-amber-700">بحاجة إلى مراجعة</span>
+              <span className="font-medium text-amber-800">بحاجة إلى مراجعة</span>
             )}
             {matched.status === "not_found" && (
-              <span className="text-gray-500">لم يُعرَف</span>
+              <span className="font-medium text-gray-700">لم يُعرَف</span>
             )}
           </div>
         </div>
 
-        <span aria-hidden className="text-2xl text-gray-400">
+        <span aria-hidden className="text-2xl text-gray-600">
           {expanded ? "−" : "+"}
         </span>
       </button>
 
       {expanded && (
-        <div className="mb-2 ms-16 rounded-lg bg-gray-50 p-3 text-sm">
+        <div className="mb-2 ms-16 rounded-lg bg-gray-50 p-3 text-sm text-gray-900">
           {(matched.candidates.length > 0 && (picking || chosenId == null)) && (
             <div className="mb-3">
               {chosenId == null && (
-                <p className="mb-2 text-gray-700">
+                <p className="mb-2 text-gray-800">
                   {matched.candidates.length === 0
                     ? "تعذّر التعرّف على هذا الراوي."
                     : "تحتاج هذه المطابقة إلى مراجعة — اختر الراوي المقصود:"}
@@ -348,7 +348,7 @@ function LinkConnector({ link }: { link?: ChainLink }) {
       >
         {style.symbol}
       </div>
-      <span className="ms-2 text-xs text-gray-600">{link.reason}</span>
+      <span className="ms-2 text-xs text-gray-700">{link.reason}</span>
     </div>
   );
 }
