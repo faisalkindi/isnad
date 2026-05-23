@@ -15,25 +15,55 @@ const VERDICT_STYLE: Record<
   ChainVerdict,
   { bg: string; text: string; label: string; symbol: string }
 > = {
-  trustworthy_candidate: {
+  sahih_candidate: {
+    bg: "bg-green-100 border-green-400",
+    text: "text-green-900",
+    label: "صحيح بظاهر الإسناد",
+    symbol: "✓",
+  },
+  hasan_candidate: {
     bg: "bg-emerald-100 border-emerald-300",
     text: "text-emerald-900",
-    label: "سلسلة محتملة الاتصال، رجالها موثَّقون",
+    label: "حسن بظاهر الإسناد",
     symbol: "✓",
+  },
+  daif: {
+    bg: "bg-orange-100 border-orange-300",
+    text: "text-orange-900",
+    label: "ضعيف الإسناد",
+    symbol: "✗",
   },
   broken: {
     bg: "bg-red-100 border-red-300",
     text: "text-red-900",
-    label: "سلسلة منقطعة",
+    label: "إسناد منقطع",
     symbol: "✗",
   },
   needs_review: {
     bg: "bg-amber-100 border-amber-300",
     text: "text-amber-900",
-    label: "السلسلة تحتاج إلى مراجعة",
+    label: "يحتاج إلى مراجعة",
     symbol: "⚠",
   },
 };
+
+function RuleFooter() {
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs leading-relaxed text-gray-700">
+      <p className="font-semibold">القاعدة المطبَّقة:</p>
+      <p className="mt-1 italic">
+        «الحديث الذي اتصل إسناده بنقل العدل الضابط عن العدل الضابط إلى منتهاه،
+        ولا يكون شاذاً ولا معلّلًا»
+      </p>
+      <p className="mt-2">
+        يفحص التطبيق <strong>الاتصال</strong> زمنيًّا، و
+        <strong>العدالة والضبط</strong> من تصنيف العلماء للرواة. أما{" "}
+        <strong>الشذوذ والعلة</strong> فيحتاجان إلى نظر العالم وليسا في طاقة
+        التطبيق — لذا قيل: <em>بظاهر الإسناد</em>.
+      </p>
+    </div>
+  );
+}
 
 function gradeBadge(grade: string | null): { className: string; label: string } | null {
   if (!grade) return null;
@@ -203,6 +233,7 @@ export default function HomePage() {
                   </div>
                 );
               })()}
+              <RuleFooter />
 
               <div className="rounded-xl border border-gray-300 bg-white p-4">
                 <h2 className="mb-2 text-sm font-semibold text-gray-600">

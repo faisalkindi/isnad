@@ -22,7 +22,16 @@ export interface MatchedNarrator {
   is_source?: boolean;
 }
 
-export type ChainVerdict = "trustworthy_candidate" | "broken" | "needs_review";
+/** Verdicts mapped to the classical conditions of حديث صحيح (Ibn al-Ṣalāḥ):
+ *    اتصال الإسناد + العدالة + الضبط + عدم الشذوذ + عدم العلة.
+ *  The app judges the first three; شذوذ/علة need a scholar — so the positive
+ *  verdicts are stated as "بظاهر الإسناد" (by the apparent isnād). */
+export type ChainVerdict =
+  | "sahih_candidate"
+  | "hasan_candidate"
+  | "daif"
+  | "broken"
+  | "needs_review";
 
 export interface ChainLink {
   from_position: number;
@@ -81,12 +90,10 @@ function normalizeConfidence(value: string | undefined): Confidence {
     : "low";
 }
 
-const RELIABLE_GRADES = new Set([
-  "prophet",
-  "companion",
-  "reliable",
-  "mostly_reliable",
-]);
+// Mapping the classical العدالة/الضبط scale to Itqan's grade buckets:
+const SAHIH_GRADES = new Set(["prophet", "companion", "reliable"]); // عدل تام الضبط
+const HASAN_GRADES = new Set(["mostly_reliable"]);                   // عدل خفّ ضبطه (صدوق)
+const WEAK_GRADES = new Set(["weak", "abandoned", "fabricator"]);    // ضعيف فأدنى
 
 /** The Prophet ﷺ is the source of every chain — appended automatically. */
 function makeProphet(position: number): MatchedNarrator {
@@ -141,27 +148,55 @@ function chainVerdict(
   narrators: MatchedNarrator[],
   links: ChainLink[],
 ): { verdict: ChainVerdict; reason: string } {
+  // 1. اتصال — any chronologically impossible link breaks the chain.
   if (links.some((l) => l.status === "impossible")) {
     return {
       verdict: "broken",
-      reason: "السلسلة منقطعة — يوجد انقطاع زمني محقّق بين بعض الرواة.",
+      reason:
+        "لم يتحقّق شرط الاتصال — يوجد انقطاع زمني محقّق بين بعض الرواة.",
     };
   }
-  const allMatched = narrators.every((n) => n.status === "matched");
-  const allReliable = narrators.every(
-    (n) =>
-      n.narrator && RELIABLE_GRADES.has(n.narrator.grade_en ?? ""),
+
+  // 2. العدالة والضبط — any clearly weak narrator drops the chain to ضعيف.
+  const hasWeak = narrators.some(
+    (n) => n.narrator && WEAK_GRADES.has(n.narrator.grade_en ?? ""),
   );
-  const allLinksConfirmed = links.every((l) => l.status === "possible");
-  if (allMatched && allReliable && allLinksConfirmed) {
+  if (hasWeak) {
     return {
-      verdict: "trustworthy_candidate",
-      reason: "كل الرواة معروفون وموثَّقون، والاتصال محتمل بين كل طبقتين.",
+      verdict: "daif",
+      reason:
+        "في الإسناد راوٍ ضعيف أو متروك أو متهم بالكذب — لم يتحقّق شرط العدالة والضبط.",
     };
   }
+
+  // 3. Incomplete data — unmatched narrators or unknown chronology links.
+  const allMatched = narrators.every((n) => n.status === "matched");
+  const allLinksKnown = links.every((l) => l.status === "possible");
+  if (!allMatched || !allLinksKnown) {
+    return {
+      verdict: "needs_review",
+      reason:
+        "بعض الرواة لم يُعرفوا أو بعض التواريخ غير مذكورة — يتعذّر الحكم.",
+    };
+  }
+
+  // 4. Every narrator is ثقة or أعلى, every link confirmed → ظاهره الصحة.
+  const allSahih = narrators.every(
+    (n) => n.narrator && SAHIH_GRADES.has(n.narrator.grade_en ?? ""),
+  );
+  if (allSahih) {
+    return {
+      verdict: "sahih_candidate",
+      reason:
+        "اتصل الإسناد بنقل العدل الضابط عن العدل الضابط إلى منتهاه. تتحقّق الشروط الظاهرة للصحّة.",
+    };
+  }
+
+  // 5. Otherwise at least one صدوق narrator — حسن لذاته بظاهر الإسناد.
   return {
-    verdict: "needs_review",
-    reason: "السلسلة تحتاج إلى مراجعة — راجع الرواة والروابط.",
+    verdict: "hasan_candidate",
+    reason:
+      "اتصل الإسناد وكلّ رواته صدوقون فأعلى — تتحقّق شروط الحسن لذاته بظاهر الإسناد.",
   };
 }
 
