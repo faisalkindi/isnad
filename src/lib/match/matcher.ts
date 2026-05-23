@@ -18,6 +18,8 @@ export interface MatchedNarrator {
   confidence: Confidence | null;
   /** All retrieved candidates — drives the correction UI. */
   candidates: NarratorCandidate[];
+  /** True for the synthetic Prophet ﷺ node (the source of every chain). */
+  is_source?: boolean;
 }
 
 export type ChainVerdict = "trustworthy_candidate" | "broken" | "needs_review";
@@ -79,7 +81,33 @@ function normalizeConfidence(value: string | undefined): Confidence {
     : "low";
 }
 
-const RELIABLE_GRADES = new Set(["companion", "reliable", "mostly_reliable"]);
+const RELIABLE_GRADES = new Set([
+  "prophet",
+  "companion",
+  "reliable",
+  "mostly_reliable",
+]);
+
+/** The Prophet ﷺ is the source of every chain — appended automatically. */
+function makeProphet(position: number): MatchedNarrator {
+  return {
+    position,
+    fragment: "رسول الله ﷺ",
+    status: "matched",
+    narrator: {
+      id: -1,
+      full_name: "رسول الله ﷺ",
+      grade_en: "prophet",
+      grade_ar: "المصدر",
+      tabaqat: null,
+      death: "11 هـ",
+      score: 1,
+    },
+    confidence: "high",
+    candidates: [],
+    is_source: true,
+  };
+}
 
 function computeLinks(narrators: MatchedNarrator[]): ChainLink[] {
   const links: ChainLink[] = [];
@@ -216,11 +244,15 @@ export async function matchChain(rawText: string): Promise<MatchResult> {
     };
   });
 
-  const links = computeLinks(narrators);
-  const { verdict, reason } = chainVerdict(narrators, links);
+  // Append the Prophet ﷺ as the source of the chain. Every hadith ends at him.
+  const fullNarrators =
+    narrators.length > 0 ? [...narrators, makeProphet(narrators.length)] : narrators;
+
+  const links = computeLinks(fullNarrators);
+  const { verdict, reason } = chainVerdict(fullNarrators, links);
   const corpus_matches = matn ? await findHadithMatches(matn) : [];
   const result: MatchResult = {
-    narrators,
+    narrators: fullNarrators,
     links,
     chain_verdict: verdict,
     chain_reason: reason,

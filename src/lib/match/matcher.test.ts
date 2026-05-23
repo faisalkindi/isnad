@@ -44,10 +44,12 @@ describe("matchChain", () => {
       ); // disambiguation
 
     const result = await matchChain(MATCH_INPUT);
-    expect(result.narrators).toHaveLength(1);
+    // 1 pasted narrator + the Prophet ﷺ appended as the source
+    expect(result.narrators).toHaveLength(2);
     expect(result.narrators[0].status).toBe("matched");
     expect(result.narrators[0].narrator?.id).toBe(realId);
     expect(result.narrators[0].confidence).toBe("high");
+    expect(result.narrators[1].is_source).toBe(true);
   });
 
   it("rejects a hallucinated id and flags the position for review", async () => {

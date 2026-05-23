@@ -52,7 +52,8 @@ describe("POST /api/audit", () => {
     const res = await post(input, `ip-${Math.random()}`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.narrators).toHaveLength(1);
+    // 1 pasted narrator + the Prophet ﷺ as the source
+    expect(body.narrators).toHaveLength(2);
   });
 
   it("429s once the rate limit is exceeded", async () => {

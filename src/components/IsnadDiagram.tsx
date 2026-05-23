@@ -10,6 +10,7 @@ import { sourceBookAr } from "@/lib/sources";
 
 // Per-grade colors for the large narrator disk (saturated, high contrast).
 const DISK_BG: Record<string, string> = {
+  prophet: "bg-amber-600",
   companion: "bg-purple-600",
   reliable: "bg-emerald-700",
   mostly_reliable: "bg-emerald-500",
@@ -20,6 +21,7 @@ const DISK_BG: Record<string, string> = {
 };
 
 const GRADE_LABEL_AR: Record<string, string> = {
+  prophet: "المصدر",
   companion: "صحابي",
   reliable: "ثقة",
   mostly_reliable: "صدوق",
@@ -48,8 +50,9 @@ const CONFIDENCE_AR: Record<string, string> = {
   low: "ثقة منخفضة",
 };
 
-/** Visual vertical isnād chain — each narrator is a colored node connected
- *  by chronologically-aware link lines. Click a node to expand details. */
+/** Visual vertical isnād chain — the Prophet ﷺ at the top (source) and the
+ *  compiler's teacher at the bottom. Each narrator is a colored node
+ *  connected by chronologically-aware link lines. Click a node to expand. */
 export function IsnadDiagram({
   narrators,
   links,
@@ -57,23 +60,60 @@ export function IsnadDiagram({
   narrators: MatchedNarrator[];
   links: ChainLink[];
 }) {
+  // Pasted order is compiler-first; display order is source-first (the
+  // Prophet at the top, transmission flowing down to the compiler's teacher).
+  const reversed = [...narrators].reverse();
+
   return (
     <div className="flex flex-col">
-      {narrators.map((n, i) => (
-        <Fragment key={n.position}>
-          <NarratorRow matched={n} />
-          {i < narrators.length - 1 && (
-            <LinkConnector link={links.find((l) => l.from_position === i)} />
-          )}
-        </Fragment>
-      ))}
+      {reversed.map((n, displayIdx) => {
+        const below = reversed[displayIdx + 1];
+        const link = below
+          ? links.find(
+              (l) =>
+                l.from_position === below.position &&
+                l.to_position === n.position,
+            )
+          : undefined;
+        return (
+          <Fragment key={n.position}>
+            <NarratorRow matched={n} displayNumber={displayIdx + 1} />
+            {below && <LinkConnector link={link} />}
+          </Fragment>
+        );
+      })}
     </div>
   );
 }
 
 /* ---------- one narrator: header + expandable body ---------- */
 
-function NarratorRow({ matched }: { matched: MatchedNarrator }) {
+function NarratorRow({
+  matched,
+  displayNumber,
+}: {
+  matched: MatchedNarrator;
+  displayNumber: number;
+}) {
+  // The Prophet ﷺ — special render: no expand, no fetch, no candidates.
+  if (matched.is_source) {
+    return (
+      <div dir="rtl" className="flex items-center gap-3 p-2">
+        <div
+          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-bold text-white shadow-md ${diskBg("prophet")}`}
+        >
+          {displayNumber}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-lg font-semibold">
+            {matched.narrator?.full_name}
+          </div>
+          <div className="text-sm text-gray-600">المصدر — توفي 11 هـ</div>
+        </div>
+      </div>
+    );
+  }
+
   const [chosenId, setChosenId] = useState<number | null>(
     matched.narrator?.id ?? null,
   );
@@ -108,7 +148,6 @@ function NarratorRow({ matched }: { matched: MatchedNarrator }) {
 
   return (
     <div dir="rtl" className="flex flex-col">
-      {/* Header — click to expand */}
       <button
         type="button"
         onClick={() => setExpanded((e) => !e)}
@@ -118,7 +157,7 @@ function NarratorRow({ matched }: { matched: MatchedNarrator }) {
           className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-bold text-white shadow-sm ${diskBg(grade)}`}
           title={gradeLabel(grade)}
         >
-          {matched.position + 1}
+          {displayNumber}
         </div>
 
         <div className="min-w-0 flex-1">
@@ -143,10 +182,8 @@ function NarratorRow({ matched }: { matched: MatchedNarrator }) {
         </span>
       </button>
 
-      {/* Expanded body */}
       {expanded && (
         <div className="mb-2 ms-16 rounded-lg bg-gray-50 p-3 text-sm">
-          {/* Picker for unresolved / when user wants to change */}
           {(matched.candidates.length > 0 && (picking || chosenId == null)) && (
             <div className="mb-3">
               {chosenId == null && (
@@ -184,7 +221,6 @@ function NarratorRow({ matched }: { matched: MatchedNarrator }) {
             </div>
           )}
 
-          {/* Detail (only when a narrator is chosen and we're not picking) */}
           {chosenId != null && !picking && (
             <>
               {loading && <p className="text-gray-500">جارٍ التحميل…</p>}
@@ -284,11 +320,9 @@ function LinkConnector({ link }: { link?: ChainLink }) {
       className="relative my-1 flex items-center"
       title={link.reason}
     >
-      {/* the vertical line — sits under the disk's center column (RTL: right) */}
       <div className="flex w-14 justify-center">
         <div className={`h-12 w-1 rounded-full ${style.line}`} />
       </div>
-      {/* status badge floating beside the line */}
       <div
         className={`flex h-6 w-6 items-center justify-center rounded-full text-sm font-bold ${style.badge}`}
         aria-label={link.reason}
