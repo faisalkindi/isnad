@@ -45,7 +45,7 @@ describe("POST /api/audit", () => {
       inputHash(input),
     ]);
     mockClaude
-      .mockResolvedValueOnce('["الزهري"]')
+      .mockResolvedValueOnce('{"narrators":["الزهري"],"matn":""}')
       .mockResolvedValueOnce(
         `[{"position":0,"chosen_id":${candidates[0].id},"confidence":"high"}]`,
       );

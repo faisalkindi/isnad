@@ -1,10 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import type { ChainVerdict, MatchResult } from "@/lib/match/matcher";
+import type {
+  ChainVerdict,
+  HadithMatch,
+  MatchResult,
+} from "@/lib/match/matcher";
 import { IsnadDiagram } from "@/components/IsnadDiagram";
 
-const EXAMPLE = "حدثنا مالك عن نافع عن ابن عمر";
+const EXAMPLE =
+  "حدثنا الحميدي عبد الله بن الزبير، قال: حدثنا سفيان، قال: حدثنا يحيى بن سعيد الأنصاري، قال: أخبرني محمد بن إبراهيم التيمي، أنه سمع علقمة بن وقاص الليثي، يقول: سمعت عمر بن الخطاب رضي الله عنه على المنبر، قال: سمعت رسول الله صلى الله عليه وسلم يقول: إنما الأعمال بالنيات وإنما لكل امرئ ما نوى";
 
 const VERDICT_STYLE: Record<
   ChainVerdict,
@@ -29,6 +34,68 @@ const VERDICT_STYLE: Record<
     symbol: "⚠",
   },
 };
+
+function gradeBadge(grade: string | null): { className: string; label: string } | null {
+  if (!grade) return null;
+  if (/sahih|صحيح/i.test(grade))
+    return { className: "bg-green-100 text-green-800", label: grade };
+  if (/hasan|حسن/i.test(grade))
+    return { className: "bg-emerald-100 text-emerald-800", label: grade };
+  if (/da'?i?f|ضعيف/i.test(grade))
+    return { className: "bg-orange-100 text-orange-800", label: grade };
+  return { className: "bg-gray-100 text-gray-700", label: grade };
+}
+
+function MatnPanel({ matn }: { matn: string }) {
+  return (
+    <div className="rounded-xl border border-gray-300 bg-white p-4" dir="rtl">
+      <h2 className="mb-2 text-sm font-semibold text-gray-600">المتن</h2>
+      <p className="text-lg leading-relaxed">{matn}</p>
+    </div>
+  );
+}
+
+function CorpusMatches({ matches }: { matches: HadithMatch[] }) {
+  return (
+    <div className="rounded-xl border border-gray-300 bg-white p-4" dir="rtl">
+      <h2 className="mb-2 text-sm font-semibold text-gray-600">
+        ورد هذا الحديث في {matches.length} موضع
+      </h2>
+      <ul className="space-y-2">
+        {matches.map((m) => {
+          const badge = gradeBadge(m.grade);
+          return (
+            <li key={m.id} className="rounded-lg border border-gray-200">
+              <details>
+                <summary className="flex cursor-pointer flex-wrap items-center gap-2 p-2 hover:bg-gray-50">
+                  <span className="font-semibold">{m.book_name_ar}</span>
+                  {m.hadith_in_book && (
+                    <span className="text-sm text-gray-500">
+                      رقم {m.hadith_in_book}
+                    </span>
+                  )}
+                  {badge && (
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs ${badge.className}`}
+                    >
+                      {badge.label}
+                    </span>
+                  )}
+                  <span className="ms-auto text-xs text-gray-400">
+                    {Math.round(m.score * 100)}٪
+                  </span>
+                </summary>
+                <p className="border-t border-gray-200 bg-gray-50 p-3 text-sm leading-relaxed">
+                  {m.arabic_full}
+                </p>
+              </details>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 export default function HomePage() {
   const [isnad, setIsnad] = useState("");
@@ -59,20 +126,24 @@ export default function HomePage() {
     }
   }
 
+  const hasChain = result && result.narrators.length > 0;
+  const hasContent =
+    result && (result.narrators.length > 0 || result.corpus_matches.length > 0 || result.matn);
+
   return (
     <main dir="rtl" className="mx-auto w-full max-w-3xl px-4 py-8">
       <h1 className="text-2xl font-bold">مدقّق الإسناد</h1>
       <p className="mt-1 text-sm text-gray-600">
-        الصق سند حديث — سيتعرّف التطبيق على كل راوٍ، ويعرض حكم العلماء عليه،
-        ويختبر الاتصال الزمني بين كل طبقتين.
+        الصق الحديث كاملًا (المتن والإسناد) — سيتعرّف التطبيق على كل راوٍ،
+        ويعرض حكم العلماء عليه، ويبحث عن المتن في الكتب التسعة.
       </p>
 
       <textarea
         dir="rtl"
         value={isnad}
         onChange={(e) => setIsnad(e.target.value)}
-        placeholder="… الصق الإسناد هنا"
-        rows={4}
+        placeholder="… الصق الحديث هنا"
+        rows={5}
         className="mt-4 w-full rounded-lg border border-gray-300 p-3 text-lg"
       />
 
@@ -84,7 +155,7 @@ export default function HomePage() {
           className="rounded-lg bg-emerald-700 px-4 py-2 text-white disabled:opacity-40"
           suppressHydrationWarning
         >
-          {loading ? "…جارٍ الفحص" : "افحص الإسناد"}
+          {loading ? "…جارٍ الفحص" : "افحص الحديث"}
         </button>
         <button
           type="button"
@@ -101,15 +172,25 @@ export default function HomePage() {
         </div>
       )}
 
-      {loading && <p className="mt-6 text-gray-500">…جارٍ تحليل السلسلة</p>}
+      {loading && <p className="mt-6 text-gray-500">…جارٍ تحليل الحديث</p>}
 
       {result && (
-        <section className="mt-8">
-          {result.narrators.length === 0 ? (
-            <p className="text-gray-600">لم يُعثر على رواة في هذا النص.</p>
-          ) : (
+        <section className="mt-8 space-y-4">
+          {!hasContent && (
+            <p className="text-gray-600">لم يُعثر على إسناد أو حديث.</p>
+          )}
+
+          {/* Matn */}
+          {result.matn && <MatnPanel matn={result.matn} />}
+
+          {/* Corpus matches */}
+          {result.corpus_matches.length > 0 && (
+            <CorpusMatches matches={result.corpus_matches} />
+          )}
+
+          {/* Isnād verdict + diagram */}
+          {hasChain && (
             <>
-              {/* Chain-level verdict */}
               {(() => {
                 const v = VERDICT_STYLE[result.chain_verdict];
                 return (
@@ -123,8 +204,10 @@ export default function HomePage() {
                 );
               })()}
 
-              {/* The visual isnād diagram */}
-              <div className="mt-6">
+              <div className="rounded-xl border border-gray-300 bg-white p-4">
+                <h2 className="mb-2 text-sm font-semibold text-gray-600">
+                  السلسلة
+                </h2>
                 <IsnadDiagram
                   narrators={result.narrators}
                   links={result.links}

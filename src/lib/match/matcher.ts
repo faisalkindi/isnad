@@ -3,6 +3,7 @@ import { findCandidates, type NarratorCandidate } from "./candidates";
 import { callClaude } from "../claude";
 import { getCached, setCached, inputHash } from "./cache";
 import { checkLink, type LinkStatus } from "./chronology";
+import { findHadithMatches, type HadithMatch } from "./corpus";
 
 export type MatchStatus = "matched" | "needs_review" | "not_found";
 export type Confidence = "high" | "medium" | "low";
@@ -32,6 +33,10 @@ export interface MatchResult {
   links: ChainLink[];
   chain_verdict: ChainVerdict;
   chain_reason: string;
+  /** The matn extracted from the pasted hadith (empty if isnād-only). */
+  matn: string;
+  /** Hadiths from the corpus whose text matches the matn. */
+  corpus_matches: HadithMatch[];
 }
 
 interface Decision {
@@ -143,7 +148,9 @@ export async function matchChain(rawText: string): Promise<MatchResult> {
   const cached = await getCached(hash);
   if (cached) return cached;
 
-  const fragments = await segmentIsnad(rawText);
+  const segmented = await segmentIsnad(rawText);
+  const fragments = segmented.narrators;
+  const matn = segmented.matn;
 
   const candidatesPerPosition = await Promise.all(
     fragments.map((fragment) => findCandidates(fragment)),
@@ -210,11 +217,14 @@ export async function matchChain(rawText: string): Promise<MatchResult> {
 
   const links = computeLinks(narrators);
   const { verdict, reason } = chainVerdict(narrators, links);
+  const corpus_matches = matn ? await findHadithMatches(matn) : [];
   const result: MatchResult = {
     narrators,
     links,
     chain_verdict: verdict,
     chain_reason: reason,
+    matn,
+    corpus_matches,
   };
   await setCached(hash, result);
   return result;

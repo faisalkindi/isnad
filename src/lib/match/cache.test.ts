@@ -24,7 +24,7 @@ describe("match cache", () => {
   it("serves an identical second request from cache, with no new Claude calls", async () => {
     const candidates = await findCandidates("الزهري");
     mockClaude
-      .mockResolvedValueOnce('["الزهري"]')
+      .mockResolvedValueOnce('{"narrators":["الزهري"],"matn":""}')
       .mockResolvedValueOnce(
         `[{"position":0,"chosen_id":${candidates[0].id},"confidence":"high"}]`,
       );

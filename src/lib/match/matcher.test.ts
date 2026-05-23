@@ -38,7 +38,7 @@ describe("matchChain", () => {
     const realId = candidates[0].id;
 
     mockClaude
-      .mockResolvedValueOnce('["الزهري"]') // segmentation
+      .mockResolvedValueOnce('{"narrators":["الزهري"],"matn":""}') // segmentation
       .mockResolvedValueOnce(
         `[{"position":0,"chosen_id":${realId},"confidence":"high"}]`,
       ); // disambiguation
@@ -52,7 +52,7 @@ describe("matchChain", () => {
 
   it("rejects a hallucinated id and flags the position for review", async () => {
     mockClaude
-      .mockResolvedValueOnce('["الزهري"]')
+      .mockResolvedValueOnce('{"narrators":["الزهري"],"matn":""}')
       .mockResolvedValueOnce(
         '[{"position":0,"chosen_id":999999999,"confidence":"high"}]',
       );
@@ -64,7 +64,7 @@ describe("matchChain", () => {
   });
 
   it("marks a fragment with no candidates as not_found", async () => {
-    mockClaude.mockResolvedValueOnce('["zzzqqqxxx"]');
+    mockClaude.mockResolvedValueOnce('{"narrators":["zzzqqqxxx"],"matn":""}');
     const result = await matchChain(NOT_FOUND_INPUT);
     expect(result.narrators[0].status).toBe("not_found");
     expect(result.narrators[0].candidates).toEqual([]);
