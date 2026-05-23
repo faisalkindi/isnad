@@ -79,8 +79,8 @@ function gradeBadge(grade: string | null): { className: string; label: string } 
 function MatnPanel({ matn }: { matn: string }) {
   return (
     <div className="rounded-xl border border-gray-300 bg-white p-4" dir="rtl">
-      <h2 className="mb-2 text-sm font-semibold text-gray-600">المتن</h2>
-      <p className="text-lg leading-relaxed">{matn}</p>
+      <h2 className="mb-2 text-sm font-bold text-gray-800">المتن</h2>
+      <p className="text-lg font-medium leading-relaxed text-gray-900">{matn}</p>
     </div>
   );
 }
@@ -88,7 +88,7 @@ function MatnPanel({ matn }: { matn: string }) {
 function CorpusMatches({ matches }: { matches: HadithMatch[] }) {
   return (
     <div className="rounded-xl border border-gray-300 bg-white p-4" dir="rtl">
-      <h2 className="mb-2 text-sm font-semibold text-gray-600">
+      <h2 className="mb-2 text-sm font-bold text-gray-800">
         ورد هذا الحديث في {matches.length} موضع
       </h2>
       <ul className="space-y-2">
@@ -98,24 +98,26 @@ function CorpusMatches({ matches }: { matches: HadithMatch[] }) {
             <li key={m.id} className="rounded-lg border border-gray-200">
               <details>
                 <summary className="flex cursor-pointer flex-wrap items-center gap-2 p-2 hover:bg-gray-50">
-                  <span className="font-semibold">{m.book_name_ar}</span>
+                  <span className="font-bold text-gray-900">
+                    {m.book_name_ar}
+                  </span>
                   {m.hadith_in_book && (
-                    <span className="text-sm text-gray-500">
+                    <span className="text-sm font-medium text-gray-700">
                       رقم {m.hadith_in_book}
                     </span>
                   )}
                   {badge && (
                     <span
-                      className={`rounded px-2 py-0.5 text-xs ${badge.className}`}
+                      className={`rounded px-2 py-0.5 text-xs font-medium ${badge.className}`}
                     >
                       {badge.label}
                     </span>
                   )}
-                  <span className="ms-auto text-xs text-gray-400">
+                  <span className="ms-auto text-xs font-medium text-gray-700">
                     {Math.round(m.score * 100)}٪
                   </span>
                 </summary>
-                <p className="border-t border-gray-200 bg-gray-50 p-3 text-sm leading-relaxed">
+                <p className="border-t border-gray-200 bg-gray-50 p-3 text-sm leading-relaxed text-gray-900">
                   {m.arabic_full}
                 </p>
               </details>
@@ -162,8 +164,8 @@ export default function HomePage() {
 
   return (
     <main dir="rtl" className="mx-auto w-full max-w-3xl px-4 py-8">
-      <h1 className="text-2xl font-bold">مدقّق الإسناد</h1>
-      <p className="mt-1 text-sm text-gray-600">
+      <h1 className="text-2xl font-bold text-gray-900">مدقّق الإسناد</h1>
+      <p className="mt-1 text-sm text-gray-700">
         الصق الحديث كاملًا (المتن والإسناد) — سيتعرّف التطبيق على كل راوٍ،
         ويعرض حكم العلماء عليه، ويبحث عن المتن في الكتب التسعة.
       </p>
