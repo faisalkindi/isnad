@@ -4,6 +4,7 @@ import { callClaude } from "../claude";
 import { getCached, setCached, inputHash } from "./cache";
 import { checkLink, type LinkStatus } from "./chronology";
 import { findHadithMatches, type HadithMatch } from "./corpus";
+export type { HadithMatch } from "./corpus";
 
 export type MatchStatus = "matched" | "needs_review" | "not_found";
 export type Confidence = "high" | "medium" | "low";
