@@ -82,6 +82,7 @@ export default function HomePage() {
           onClick={audit}
           disabled={loading || isnad.trim().length === 0}
           className="rounded-lg bg-emerald-700 px-4 py-2 text-white disabled:opacity-40"
+          suppressHydrationWarning
         >
           {loading ? "…جارٍ الفحص" : "افحص الإسناد"}
         </button>
