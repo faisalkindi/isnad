@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import type { ChainVerdict, MatchResult } from "@/lib/match/matcher";
-import { ChainView } from "@/components/ChainView";
-import { NarratorCard } from "@/components/NarratorCard";
+import { IsnadDiagram } from "@/components/IsnadDiagram";
 
 const EXAMPLE = "حدثنا مالك عن نافع عن ابن عمر";
 
@@ -60,12 +59,6 @@ export default function HomePage() {
     }
   }
 
-  function scrollToCard(position: number) {
-    document
-      .getElementById(`narrator-${position}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }
-
   return (
     <main dir="rtl" className="mx-auto w-full max-w-3xl px-4 py-8">
       <h1 className="text-2xl font-bold">مدقّق الإسناد</h1>
@@ -119,9 +112,7 @@ export default function HomePage() {
               {(() => {
                 const v = VERDICT_STYLE[result.chain_verdict];
                 return (
-                  <div
-                    className={`rounded-xl border ${v.bg} ${v.text} p-4`}
-                  >
+                  <div className={`rounded-xl border ${v.bg} ${v.text} p-4`}>
                     <div className="flex items-center gap-2 text-lg font-bold">
                       <span aria-hidden>{v.symbol}</span>
                       <span>{v.label}</span>
@@ -131,21 +122,12 @@ export default function HomePage() {
                 );
               })()}
 
-              <h2 className="mt-6 text-lg font-semibold">السلسلة</h2>
-              <div className="mt-2">
-                <ChainView
+              {/* The visual isnād diagram */}
+              <div className="mt-6">
+                <IsnadDiagram
                   narrators={result.narrators}
                   links={result.links}
-                  onSelect={scrollToCard}
                 />
-              </div>
-
-              <div className="mt-6 space-y-4">
-                {result.narrators.map((n) => (
-                  <div key={n.position} id={`narrator-${n.position}`}>
-                    <NarratorCard matched={n} />
-                  </div>
-                ))}
               </div>
             </>
           )}
