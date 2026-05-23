@@ -60,14 +60,27 @@ interface Decision {
 const DISAMBIG_SYSTEM = `You disambiguate narrators in a hadith isnād.
 
 You are given the ordered name fragments of a chain, and for each position a list
-of candidate narrators (id, name, grade, generation). For each position, choose the
-candidate id that best fits given the surrounding narrators in the chain, or null if
-none is a credible fit.
+of candidate narrators (id, name, grade, generation, death-year). For each position,
+choose the candidate id that best fits given:
+ - the surrounding narrators in the chain
+ - chronological plausibility — a student must have heard from his teacher, so
+   the student's death year is normally within ~80 years of the teacher's. Prefer
+   candidates whose dates fit the chain.
 
 Return ONLY a JSON array, no commentary:
 [{"position": <int>, "chosen_id": <int|null>, "confidence": "high"|"medium"|"low"}]
 
-You may ONLY choose an id that appears in that position's candidate list.`;
+You may ONLY choose an id that appears in that position's candidate list. Use null
+only when no candidate is a credible fit.`;
+
+// Strip Islamic honorifics from a fragment before searching. They throw off
+// trigram match because of their length.
+const HONORIFICS_RX =
+  /\s*(?:رضي\s+الله\s+عنه(?:م|ا|ما)?|صلى\s+الله\s+عليه\s+و?سلم|ﷺ|عليه(?:م)?\s+السلام|رحمه\s+الله(?:\s+تعالى)?|تعالى)\s*/g;
+
+function stripHonorifics(fragment: string): string {
+  return fragment.replace(HONORIFICS_RX, " ").replace(/\s+/g, " ").trim();
+}
 
 function parseDecisions(reply: string): Decision[] {
   const start = reply.indexOf("[");
@@ -216,8 +229,12 @@ export async function matchChain(rawText: string): Promise<MatchResult> {
   const fragments = segmented.narrators;
   const matn = segmented.matn;
 
+  // Strip honorifics (رضي الله عنه, ﷺ, …) before searching — they wreck
+  // trigram match. Keep the originals for display.
+  const searchFragments = fragments.map(stripHonorifics);
+
   const candidatesPerPosition = await Promise.all(
-    fragments.map((fragment) => findCandidates(fragment)),
+    searchFragments.map((fragment) => findCandidates(fragment)),
   );
 
   let decisions: Decision[] = [];
@@ -230,6 +247,7 @@ export async function matchChain(rawText: string): Promise<MatchResult> {
         name: c.full_name,
         grade: c.grade_en,
         generation: c.tabaqat,
+        death: c.death,
       })),
     }));
     const reply = await callClaude(JSON.stringify(promptData), {
