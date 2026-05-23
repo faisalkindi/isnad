@@ -39,6 +39,21 @@ function gradeLabel(gradeEn: string | null | undefined): string {
   return GRADE_LABEL_AR[gradeEn ?? ""] ?? "غير معروف الحال";
 }
 
+/** Treat anyone whose tabaqat/grade-text identifies him as a Companion AS one,
+ *  regardless of the bucket Itqan placed him in (الصحابة كلهم عدول). */
+function effectiveGradeEn(
+  gradeEn: string | null | undefined,
+  tabaqat: string | null | undefined,
+  gradeAr: string | null | undefined,
+): string {
+  const t = tabaqat ?? "";
+  const g = gradeAr ?? "";
+  if (/صحاب|صحبة|له\s+رؤية/.test(t) || /صحاب|صحبة|له\s+صحبة/.test(g)) {
+    return "companion";
+  }
+  return gradeEn ?? "";
+}
+
 /** "—" when missing; otherwise the value (Itqan stores "-" for missing). */
 function display(v: string | null | undefined): string | null {
   return v && v !== "-" ? v : null;
@@ -143,7 +158,11 @@ function NarratorRow({
     matched.narrator?.full_name ?? matched.fragment;
   const death = display(matched.narrator?.death);
   const tabaqat = display(matched.narrator?.tabaqat);
-  const grade = matched.narrator?.grade_en ?? null;
+  const grade = effectiveGradeEn(
+    matched.narrator?.grade_en,
+    matched.narrator?.tabaqat,
+    matched.narrator?.grade_ar,
+  );
   const userCorrected = chosenId !== (matched.narrator?.id ?? null);
 
   return (

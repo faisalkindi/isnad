@@ -108,6 +108,18 @@ const SAHIH_GRADES = new Set(["prophet", "companion", "reliable"]); // عدل ت
 const HASAN_GRADES = new Set(["mostly_reliable"]);                   // عدل خفّ ضبطه (صدوق)
 const WEAK_GRADES = new Set(["weak", "abandoned", "fabricator"]);    // ضعيف فأدنى
 
+/** Classical rule: الصحابة كلّهم عدول. If a narrator's tabaqat or grade text
+ *  identifies him as a Companion, treat him as such regardless of the bucket
+ *  Itqan placed him in. */
+function effectiveGrade(n: MatchedNarrator): string {
+  const t = n.narrator?.tabaqat ?? "";
+  const g = n.narrator?.grade_ar ?? "";
+  if (/صحاب|صحبة|له\s+رؤية/.test(t) || /صحاب|صحبة|له\s+صحبة/.test(g)) {
+    return "companion";
+  }
+  return n.narrator?.grade_en ?? "";
+}
+
 /** The Prophet ﷺ is the source of every chain — appended automatically. */
 function makeProphet(position: number): MatchedNarrator {
   return {
@@ -172,7 +184,7 @@ function chainVerdict(
 
   // 2. العدالة والضبط — any clearly weak narrator drops the chain to ضعيف.
   const hasWeak = narrators.some(
-    (n) => n.narrator && WEAK_GRADES.has(n.narrator.grade_en ?? ""),
+    (n) => n.narrator && WEAK_GRADES.has(effectiveGrade(n)),
   );
   if (hasWeak) {
     return {
@@ -195,7 +207,7 @@ function chainVerdict(
 
   // 4. Every narrator is ثقة or أعلى, every link confirmed → ظاهره الصحة.
   const allSahih = narrators.every(
-    (n) => n.narrator && SAHIH_GRADES.has(n.narrator.grade_en ?? ""),
+    (n) => n.narrator && SAHIH_GRADES.has(effectiveGrade(n)),
   );
   if (allSahih) {
     return {
