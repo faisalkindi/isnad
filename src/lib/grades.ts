@@ -24,3 +24,26 @@ const FALLBACK: GradeStyle = {
 export function gradeStyle(gradeEn: string | null): GradeStyle {
   return GRADES[gradeEn ?? ""] ?? FALLBACK;
 }
+
+// Numeric tier — higher = more positive. Used for cross-book disagreement
+// calculation and picking "highest praise" vs "harshest criticism".
+//   companion       = 6  (الصحابة كلهم عدول)
+//   reliable        = 5  ثقة
+//   mostly_reliable = 4  صدوق
+//   unknown         = 3  مجهول الحال
+//   weak            = 2  ضعيف
+//   abandoned       = 1  متروك
+//   fabricator      = 0  كذاب
+const GRADE_TIER: Record<string, number> = {
+  companion: 6,
+  reliable: 5,
+  mostly_reliable: 4,
+  unknown: 3,
+  weak: 2,
+  abandoned: 1,
+  fabricator: 0,
+};
+
+export function gradeTier(gradeEn: string | null | undefined): number {
+  return GRADE_TIER[gradeEn ?? ""] ?? 3;
+}

@@ -1,10 +1,25 @@
 import { query } from "./db";
+import { gradeTier } from "./grades";
+import { isMentionOnly } from "./narrator-helpers";
+export { isMentionOnly } from "./narrator-helpers";
 
 export interface SourceGrade {
   source_book: string;
   entry_id: number | null;
   grade_en: string | null;
   grade_ar: string | null;
+}
+
+/** Cross-book grade-disagreement summary for one narrator. */
+export interface DisagreementSummary {
+  /** How many distinct grade_en buckets show up across books (excluding null/unknown). */
+  distinctGrades: number;
+  /** Range of tiers (max - min) — bigger = more dramatic disagreement. */
+  tierSpread: number;
+  /** The most-positive grading we have, with its book. */
+  highest: SourceGrade | null;
+  /** The most-negative grading we have, with its book. */
+  lowest: SourceGrade | null;
 }
 
 export interface NarratorDetail {
@@ -21,8 +36,60 @@ export interface NarratorDetail {
   itqan_confidence: string | null;
   nameVariants: string[];
   sourceGrades: SourceGrade[];
+  /** Same rows as sourceGrades, sorted by tier descending (praise → criticism). */
+  sortedSourceGrades: SourceGrade[];
+  disagreement: DisagreementSummary;
   teacherIds: number[];
   studentIds: number[];
+}
+
+function computeDisagreement(grades: SourceGrade[]): DisagreementSummary {
+  // Classical principle: «الصحابة كلّهم عدول». Companions are not subject to
+  // jarh. If ANY source marks this narrator as a Companion, treat «ضعيف /
+  // متروك / كذاب» grades as parser artifacts (Itqan's automated parser of
+  // al-Iṣāba, al-Siyar, and al-Tadhkira sometimes misclassifies contextual
+  // mentions of «ضعيف» / «لين» as gradings of the narrator himself).
+  const isCompanion = grades.some(
+    (g) =>
+      g.grade_en === "companion" ||
+      (g.grade_ar && /صحاب|صحبة|له\s+صحبة|أدرك\s+النبي/.test(g.grade_ar)),
+  );
+
+  // Only consider rows with a real, opinionated grade — exclude:
+  //   - null / "unknown" grade_en (book mentions but doesn't grade)
+  //   - citation-only grade_ar like «ذكره ابن حجر في الإصابة»
+  //   - for Companions: anything in the jarh tiers (parser noise)
+  const graded = grades.filter((g) => {
+    if (!g.grade_en || g.grade_en === "unknown") return false;
+    if (isMentionOnly(g.grade_ar)) return false;
+    if (
+      isCompanion &&
+      (g.grade_en === "weak" ||
+        g.grade_en === "abandoned" ||
+        g.grade_en === "fabricator")
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  if (graded.length === 0) {
+    return { distinctGrades: 0, tierSpread: 0, highest: null, lowest: null };
+  }
+  const distinct = new Set(graded.map((g) => g.grade_en));
+  let highest = graded[0];
+  let lowest = graded[0];
+  for (const g of graded) {
+    if (gradeTier(g.grade_en) > gradeTier(highest.grade_en)) highest = g;
+    if (gradeTier(g.grade_en) < gradeTier(lowest.grade_en)) lowest = g;
+  }
+  return {
+    distinctGrades: distinct.size,
+    tierSpread:
+      gradeTier(highest.grade_en) - gradeTier(lowest.grade_en),
+    highest,
+    lowest,
+  };
 }
 
 interface NarratorRow {
@@ -41,9 +108,12 @@ interface NarratorRow {
 
 /** Look up one narrator with its name variants, per-book grades, and links. */
 export async function getNarrator(id: number): Promise<NarratorDetail | null> {
+  // COALESCE the AR-Sanad death_overlay in when Itqan's `death` is null —
+  // see migration 003 and scripts/import-arsanad-deaths.ts.
   const base = await query<NarratorRow>(
     `SELECT id, full_name, kunya, laqab, nasab, grade_en, grade_ar,
-            death, tabaqat, city, itqan_confidence
+            COALESCE(NULLIF(death, '-'), death_overlay) AS death,
+            tabaqat, city, itqan_confidence
      FROM narrator WHERE id = $1`,
     [id],
   );
@@ -69,10 +139,18 @@ export async function getNarrator(id: number): Promise<NarratorDetail | null> {
     ),
   ]);
 
+  const sourceGrades = grades.rows;
+  const sortedSourceGrades = [...sourceGrades].sort(
+    (a, b) => gradeTier(b.grade_en) - gradeTier(a.grade_en),
+  );
+  const disagreement = computeDisagreement(sourceGrades);
+
   return {
     ...base.rows[0],
     nameVariants: variants.rows.map((r) => r.variant),
-    sourceGrades: grades.rows,
+    sourceGrades,
+    sortedSourceGrades,
+    disagreement,
     teacherIds: teachers.rows.map((r) => r.teacher_id),
     studentIds: students.rows.map((r) => r.student_id),
   };

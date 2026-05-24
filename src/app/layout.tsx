@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { LimitsBanner } from "@/components/LimitsBanner";
+import { SiteFooter } from "@/components/SiteFooter";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,8 +15,45 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "مدقّق الإسناد",
-  description: "ابحث عن رواة الحديث وارسم سلاسل الإسناد.",
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://isnad.app",
+  ),
+  title: {
+    default: "مدقّق الإسناد — تدقيق سلاسل رواة الحديث",
+    template: "%s | مدقّق الإسناد",
+  },
+  description:
+    "أداة آلية لتدقيق إسناد الحديث: تتعرَّف على كل راوٍ في السلسلة، تعرض حكم العلماء عليه من 22 كتاباً، وتتحقَّق من اتصال السلسلة زمنيًّا وبتوثيقات كتب الرجال، وفق منهج ابن الصلاح.",
+  keywords: [
+    "حديث",
+    "إسناد",
+    "رجال",
+    "جرح وتعديل",
+    "مدقّق الإسناد",
+    "hadith",
+    "isnad",
+    "ilm al-rijal",
+  ],
+  openGraph: {
+    title: "مدقّق الإسناد",
+    description:
+      "تدقيقٌ آلي لسلاسل رواة الحديث، يدمج 22 كتاباً من كتب الرجال و18 كتاباً من كتب الحديث.",
+    locale: "ar_SA",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "مدقّق الإسناد",
+    description:
+      "تدقيقٌ آلي لسلاسل رواة الحديث، يدمج 22 كتاباً من كتب الرجال و18 كتاباً من كتب الحديث.",
+  },
+  robots: { index: true, follow: true },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#047857",
 };
 
 export default function RootLayout({
@@ -30,9 +68,13 @@ export default function RootLayout({
       translate="no"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+      <body
+        className="flex min-h-full flex-col bg-gray-50"
+        suppressHydrationWarning
+      >
         <LimitsBanner />
-        {children}
+        <div className="flex-1">{children}</div>
+        <SiteFooter />
       </body>
     </html>
   );

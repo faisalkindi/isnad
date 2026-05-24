@@ -1,10 +1,17 @@
-import { segmentIsnad } from "./segment";
+import {
+  segmentIsnad,
+  formulaStrength,
+  type ReceiveFormula,
+} from "./segment";
 import { findCandidates, type NarratorCandidate } from "./candidates";
 import { callClaude } from "../claude";
 import { getCached, setCached, inputHash } from "./cache";
 import { checkLink, type LinkStatus } from "./chronology";
 import { findHadithMatches, type HadithMatch } from "./corpus";
+import { query } from "../db";
+import { normalizeArabic } from "../normalize";
 export type { HadithMatch } from "./corpus";
+export type { ReceiveFormula } from "./segment";
 
 export type MatchStatus = "matched" | "needs_review" | "not_found";
 export type Confidence = "high" | "medium" | "low";
@@ -18,6 +25,9 @@ export interface MatchedNarrator {
   confidence: Confidence | null;
   /** All retrieved candidates — drives the correction UI. */
   candidates: NarratorCandidate[];
+  /** The transmission formula this narrator used to receive from the next
+   *  (older) narrator. null on the oldest narrator and on the Prophet. */
+  formula: ReceiveFormula | null;
   /** True for the synthetic Prophet ﷺ node (the source of every chain). */
   is_source?: boolean;
 }
@@ -33,11 +43,38 @@ export type ChainVerdict =
   | "broken"
   | "needs_review";
 
+export interface CoOccurrence {
+  /** Total number of hadiths in the corpus mentioning BOTH narrator names. */
+  total: number;
+  /** Per-book breakdown (top books by count). */
+  books: { book_id: string; book_name_ar: string; count: number }[];
+}
+
+export interface GeoOverlap {
+  /** "overlap" = at least one common city; "no_overlap" = both have cities
+   *  but no common ones; "unknown" = one or both have no city data. */
+  status: "overlap" | "no_overlap" | "unknown";
+  /** The cities both narrators are recorded as having lived in or visited. */
+  shared: string[];
+}
+
 export interface ChainLink {
   from_position: number;
   to_position: number;
   status: LinkStatus;
   reason: string;
+  /** Approximate corpus co-occurrence — null when one of the narrators has no
+   *  distinct name (too generic to substring-match safely). */
+  cooccurrence?: CoOccurrence | null;
+  /** The transmission formula the student used (captured by the segmenter). */
+  formula?: ReceiveFormula | null;
+  /** Classification of the formula's strength for samāʿ verification. */
+  formulaStrength?: "explicit" | "ambiguous" | "unknown";
+  /** True when the student is a tier-3+ mudallis AND used an ambiguous
+   *  formula — Bukhārī/Muslim reject such a link without explicit hearing. */
+  tadlisConcern?: boolean;
+  /** Geographic plausibility — weak signal only (city data is sparse). */
+  geo?: GeoOverlap;
 }
 
 export interface MatchResult {
@@ -108,16 +145,23 @@ const SAHIH_GRADES = new Set(["prophet", "companion", "reliable"]); // عدل ت
 const HASAN_GRADES = new Set(["mostly_reliable"]);                   // عدل خفّ ضبطه (صدوق)
 const WEAK_GRADES = new Set(["weak", "abandoned", "fabricator"]);    // ضعيف فأدنى
 
-/** Classical rule: الصحابة كلّهم عدول. If a narrator's tabaqat or grade text
- *  identifies him as a Companion, treat him as such regardless of the bucket
- *  Itqan placed him in. */
+/** App policy — "always apply the harshest jarh available across the 22 books"
+ *  (a conservative reading of «الجرح المفسَّر مقدَّم على التعديل»).
+ *
+ *  Carve-out: الصحابة كلّهم عدول. If the narrator is identified as a Companion
+ *  by tabaqat or grade text, treat him as such regardless of any later
+ *  criticism (Companions are not subject to jarḥ by classical consensus). */
 function effectiveGrade(n: MatchedNarrator): string {
   const t = n.narrator?.tabaqat ?? "";
   const g = n.narrator?.grade_ar ?? "";
   if (/صحاب|صحبة|له\s+رؤية/.test(t) || /صحاب|صحبة|له\s+صحبة/.test(g)) {
     return "companion";
   }
-  return n.narrator?.grade_en ?? "";
+  return (
+    n.narrator?.harshest_grade_en ??
+    n.narrator?.grade_en ??
+    ""
+  );
 }
 
 /** The Prophet ﷺ is the source of every chain — appended automatically. */
@@ -131,39 +175,238 @@ function makeProphet(position: number): MatchedNarrator {
       full_name: "رسول الله ﷺ",
       grade_en: "prophet",
       grade_ar: "المصدر",
+      harshest_grade_en: "prophet",
+      harshest_grade_ar: null,
+      harshest_source_book: null,
       tabaqat: null,
       death: "11 هـ",
+      tadlis_tier: null,
+      cities: "المدينة، مكة",
       score: 1,
     },
     confidence: "high",
     candidates: [],
+    formula: null,
     is_source: true,
   };
 }
 
-function computeLinks(narrators: MatchedNarrator[]): ChainLink[] {
+/** Parse a "city1، city2، city3" string into a clean Set, normalizing each
+ *  city for comparison. */
+function parseCities(s: string | null | undefined): Set<string> {
+  if (!s) return new Set();
+  const out = new Set<string>();
+  for (const c of s.split(/[،,;]/)) {
+    const t = c.trim();
+    if (t && t !== "-") out.add(normalizeArabic(t));
+  }
+  return out;
+}
+
+function computeGeoOverlap(
+  studentCities: string | null | undefined,
+  teacherCities: string | null | undefined,
+): GeoOverlap {
+  const s = parseCities(studentCities);
+  const t = parseCities(teacherCities);
+  if (s.size === 0 || t.size === 0) {
+    return { status: "unknown", shared: [] };
+  }
+  const shared = [...s].filter((c) => t.has(c));
+  return {
+    status: shared.length > 0 ? "overlap" : "no_overlap",
+    shared,
+  };
+}
+
+/** Reduce a full nasab to a compact "FirstName بن FatherName" form, which is
+ *  the way famous narrators are typically cited inside chain text. Falls back
+ *  to the first ~25 characters when the structure doesn't match. */
+function chainName(fullName: string): string {
+  const tokens = fullName.replace(/[،:]/g, " ").split(/\s+/).filter(Boolean);
+  if (tokens.length >= 3 && (tokens[1] === "بن" || tokens[1] === "بنت")) {
+    return `${tokens[0]} ${tokens[1]} ${tokens[2]}`;
+  }
+  return tokens.slice(0, 3).join(" ");
+}
+
+const MIN_CHAIN_NAME_LEN = 6; // shorter than this is too ambiguous to search
+
+/** For each (student, teacher) pair, count co-citations in the hadith corpus.
+ *  Runs all link queries in parallel. Each query is one sequential scan over
+ *  the 112k-row corpus with two ILIKE filters — slow on Neon free tier but
+ *  acceptable for the 3–7 links of a typical chain. */
+async function fetchCorpusCooccurrence(
+  pairs: { studentName: string | null; teacherName: string | null }[],
+): Promise<(CoOccurrence | null)[]> {
+  return Promise.all(
+    pairs.map(async (p) => {
+      if (!p.studentName || !p.teacherName) return null;
+      const s = normalizeArabic(p.studentName);
+      const t = normalizeArabic(p.teacherName);
+      if (s.length < MIN_CHAIN_NAME_LEN || t.length < MIN_CHAIN_NAME_LEN) {
+        return null;
+      }
+      try {
+        const r = await query<{ book_id: string; book_name_ar: string; c: string }>(
+          `SELECT book_id, book_name_ar, count(*)::text AS c
+           FROM hadith
+           WHERE arabic_normalized LIKE '%' || $1 || '%'
+             AND arabic_normalized LIKE '%' || $2 || '%'
+           GROUP BY book_id, book_name_ar
+           ORDER BY count(*) DESC
+           LIMIT 18`,
+          [s, t],
+        );
+        const total = r.rows.reduce((acc, row) => acc + Number(row.c), 0);
+        return {
+          total,
+          books: r.rows.map((row) => ({
+            book_id: row.book_id,
+            book_name_ar: row.book_name_ar,
+            count: Number(row.c),
+          })),
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+}
+
+/**
+ * Bulk-fetch the set of (student_id → teacher_id) pairs that are explicitly
+ * recorded as teacher-student edges in Itqan's `transmission` table.
+ * One round-trip per chain, not per link.
+ */
+async function fetchAttestedPairs(
+  pairs: { studentId: number; teacherId: number }[],
+): Promise<Set<string>> {
+  const real = pairs.filter((p) => p.studentId > 0 && p.teacherId > 0);
+  if (real.length === 0) return new Set();
+  const rows = await query<{ student_id: number; teacher_id: number }>(
+    `SELECT t.student_id, t.teacher_id
+     FROM transmission t
+     WHERE (t.student_id, t.teacher_id) IN (
+       SELECT s_id, t_id FROM
+         unnest($1::int[], $2::int[]) AS u(s_id, t_id)
+     )`,
+    [real.map((p) => p.studentId), real.map((p) => p.teacherId)],
+  );
+  const set = new Set<string>();
+  for (const r of rows.rows) set.add(`${r.student_id}->${r.teacher_id}`);
+  return set;
+}
+
+async function computeLinks(
+  narrators: MatchedNarrator[],
+): Promise<ChainLink[]> {
+  // Collect every (student, teacher) pair we'll need to verify.
+  const pairs: { studentId: number; teacherId: number }[] = [];
+  const namePairs: { studentName: string | null; teacherName: string | null }[] = [];
+  for (let i = 0; i < narrators.length - 1; i++) {
+    const student = narrators[i].narrator;
+    const teacher = narrators[i + 1].narrator;
+    if (student && teacher) {
+      pairs.push({ studentId: student.id, teacherId: teacher.id });
+      namePairs.push({
+        studentName: chainName(student.full_name),
+        teacherName: chainName(teacher.full_name),
+      });
+    } else {
+      namePairs.push({ studentName: null, teacherName: null });
+    }
+  }
+  // Both lookups run in parallel: transmission edges (fast, one round-trip)
+  // and corpus co-occurrence (slow, N round-trips, one per link).
+  const [attested, cooccurrences] = await Promise.all([
+    fetchAttestedPairs(pairs),
+    fetchCorpusCooccurrence(namePairs),
+  ]);
+
   const links: ChainLink[] = [];
   for (let i = 0; i < narrators.length - 1; i++) {
     const student = narrators[i].narrator;
     const teacher = narrators[i + 1].narrator;
+    const co = cooccurrences[i] ?? null;
+    const formula = narrators[i].formula ?? null;
+    const strength = formulaStrength(formula);
+    const geo = computeGeoOverlap(student?.cities, teacher?.cities);
+    // Tadlis concern: the STUDENT is a tier-3+ mudallis AND he used an
+    // ambiguous formula (عن / أن / قال). This is the classical risk Bukhārī
+    // and Muslim guard against; it makes the link weaker even if chronology
+    // and attestation are otherwise fine.
+    const tadlisConcern =
+      student != null &&
+      student.tadlis_tier != null &&
+      student.tadlis_tier >= 3 &&
+      strength === "ambiguous";
+
     if (!student || !teacher) {
       links.push({
         from_position: i,
         to_position: i + 1,
         status: "unknown",
         reason: "أحد الراويين لم يُعرَف.",
+        cooccurrence: co,
+        formula,
+        formulaStrength: strength,
+        tadlisConcern,
+        geo,
       });
       continue;
     }
-    const r = checkLink(
+    const chron = checkLink(
       { death: student.death },
       { death: teacher.death },
     );
+    // Chronology trumps attestation: if a recorded edge says they met but the
+    // death years rule it out, we trust the math. (This shouldn't normally
+    // happen — it would signal bad data in either Itqan's transmission table
+    // or the matched narrator IDs.)
+    if (chron.status === "impossible") {
+      links.push({
+        from_position: i,
+        to_position: i + 1,
+        status: "impossible",
+        reason: chron.reason,
+        cooccurrence: co,
+        formula,
+        formulaStrength: strength,
+        tadlisConcern,
+        geo,
+      });
+      continue;
+    }
+    const isAttested = attested.has(`${student.id}->${teacher.id}`);
+    let baseReason: string;
+    let baseStatus: LinkStatus;
+    if (isAttested) {
+      baseStatus = "attested";
+      baseReason =
+        chron.status === "possible"
+          ? "علاقة شيخ-تلميذ موثَّقة في كتب الرجال، والوفاتان منسجمتان."
+          : "علاقة شيخ-تلميذ موثَّقة في كتب الرجال.";
+    } else {
+      baseStatus = chron.status;
+      baseReason = chron.reason;
+    }
+    if (tadlisConcern) {
+      baseReason +=
+        ` ⚠ الراوي مدلِّس من المرتبة ${student.tadlis_tier}، وقد ` +
+        `استعمل صيغة محتملة («عن» أو «قال» أو «أنّ») دون تصريح بالسماع — ` +
+        `يُتوقَّف في قبول الرواية حتى يُعرف سماعه.`;
+    }
     links.push({
       from_position: i,
       to_position: i + 1,
-      status: r.status,
-      reason: r.reason,
+      status: baseStatus,
+      reason: baseReason,
+      cooccurrence: co,
+      formula,
+      formulaStrength: strength,
+      tadlisConcern,
+      geo,
     });
   }
   return links;
@@ -194,16 +437,29 @@ function chainVerdict(
     };
   }
 
-  // 3. Incomplete data — unmatched narrators or unknown chronology links.
+  // 3. Incomplete data — unmatched narrators OR any link still `unknown`.
+  //    Attested and possible both count as "the chronology is OK"; only
+  //    `unknown` (missing death years) blocks the verdict.
   const allMatched = narrators.every((n) => n.status === "matched");
-  const allLinksKnown = links.every((l) => l.status === "possible");
-  if (!allMatched || !allLinksKnown) {
+  const noUnknownLinks = links.every(
+    (l) => l.status === "attested" || l.status === "possible",
+  );
+  if (!allMatched || !noUnknownLinks) {
     return {
       verdict: "needs_review",
       reason:
         "بعض الرواة لم يُعرفوا أو بعض التواريخ غير مذكورة — يتعذّر الحكم.",
     };
   }
+
+  // How many links are attested by the rijāl literature?
+  const attestedCount = links.filter((l) => l.status === "attested").length;
+  const allAttested = links.length > 0 && attestedCount === links.length;
+  const attestationSuffix = allAttested
+    ? " وكل صلات السلسلة موثَّقة في كتب الرجال (شرط البخاري في ثبوت اللقاء)."
+    : attestedCount > 0
+      ? ` و${attestedCount} من ${links.length} من صلات السلسلة موثَّقة في كتب الرجال.`
+      : "";
 
   // 4. Every narrator is ثقة or أعلى, every link confirmed → ظاهره الصحة.
   const allSahih = narrators.every(
@@ -213,7 +469,8 @@ function chainVerdict(
     return {
       verdict: "sahih_candidate",
       reason:
-        "اتصل الإسناد بنقل العدل الضابط عن العدل الضابط إلى منتهاه. تتحقّق الشروط الظاهرة للصحّة.",
+        "اتصل الإسناد بنقل العدل الضابط عن العدل الضابط إلى منتهاه. تتحقّق الشروط الظاهرة للصحّة." +
+        attestationSuffix,
     };
   }
 
@@ -221,7 +478,8 @@ function chainVerdict(
   return {
     verdict: "hasan_candidate",
     reason:
-      "اتصل الإسناد وكلّ رواته صدوقون فأعلى — تتحقّق شروط الحسن لذاته بظاهر الإسناد.",
+      "اتصل الإسناد وكلّ رواته صدوقون فأعلى — تتحقّق شروط الحسن لذاته بظاهر الإسناد." +
+      attestationSuffix,
   };
 }
 
@@ -238,7 +496,10 @@ export async function matchChain(rawText: string): Promise<MatchResult> {
   if (cached) return cached;
 
   const segmented = await segmentIsnad(rawText);
-  const fragments = segmented.narrators;
+  const fragments = segmented.narrators.map((n) => n.name);
+  const formulas: (ReceiveFormula | null)[] = segmented.narrators.map(
+    (n) => n.formula,
+  );
   const matn = segmented.matn;
 
   // Strip honorifics (رضي الله عنه, ﷺ, …) before searching — they wreck
@@ -271,6 +532,7 @@ export async function matchChain(rawText: string): Promise<MatchResult> {
 
   const narrators: MatchedNarrator[] = fragments.map((fragment, i) => {
     const candidates = candidatesPerPosition[i];
+    const formula = formulas[i];
     if (candidates.length === 0) {
       return {
         position: i,
@@ -279,6 +541,7 @@ export async function matchChain(rawText: string): Promise<MatchResult> {
         narrator: null,
         confidence: null,
         candidates: [],
+        formula,
       };
     }
 
@@ -296,6 +559,7 @@ export async function matchChain(rawText: string): Promise<MatchResult> {
         narrator: null,
         confidence: null,
         candidates,
+        formula,
       };
     }
 
@@ -306,6 +570,7 @@ export async function matchChain(rawText: string): Promise<MatchResult> {
       narrator: chosen,
       confidence: normalizeConfidence(decision?.confidence),
       candidates,
+      formula,
     };
   });
 
@@ -313,7 +578,7 @@ export async function matchChain(rawText: string): Promise<MatchResult> {
   const fullNarrators =
     narrators.length > 0 ? [...narrators, makeProphet(narrators.length)] : narrators;
 
-  const links = computeLinks(fullNarrators);
+  const links = await computeLinks(fullNarrators);
   const { verdict, reason } = chainVerdict(fullNarrators, links);
   const corpus_matches = matn ? await findHadithMatches(matn) : [];
   const result: MatchResult = {

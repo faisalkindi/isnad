@@ -1,36 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Isnād — مدقّق الإسناد
 
-## Getting Started
+Automated chain-of-narration auditor for ḥadīth. Identifies every narrator in
+a pasted isnād, surfaces the per-book gradings from 22 classical rijāl works,
+verifies chronological + recorded-transmission continuity, applies the
+classical conditions of *ḥadīth ṣaḥīḥ* per Ibn al-Ṣalāḥ, and matches the matn
+against a corpus of 112,221 ḥadīths from 18 books.
 
-First, run the development server:
+Built with Next.js 16, Neon Postgres, and Anthropic Claude.
+
+## Architecture
+
+- **Segmenter** (`src/lib/match/segment.ts`) — Claude parses pasted text into
+  narrator names + per-link transmission formulas (حدثنا / عن / سمعت …).
+  Handles taḥwīl (ح), multi-compiler (قالا), and relative refs (عن أبيه).
+- **Candidate retrieval** (`src/lib/match/candidates.ts`) — Postgres pg_trgm
+  similarity over 196,488 normalized name variants. Returns top-12 candidates
+  per position, with the harshest grade computed in SQL.
+- **Disambiguation** (`src/lib/match/matcher.ts`) — Claude picks the right
+  narrator per position using full chain context (death years, tabaqāt,
+  surrounding narrators).
+- **Verification** — chronology (`chronology.ts`), recorded transmission edges
+  (336,175 in the `transmission` table), corpus co-occurrence, mudallisīn flag
+  (Ibn Ḥajar's *Ṭabaqāt al-Mudallisīn*).
+- **Cache** (`src/lib/match/cache.ts`) — every audit is sha256-keyed and
+  persisted to `match_cache`. Same input → instant cache hit, zero Claude
+  calls. Shared across all users via the Postgres backend.
+
+## Local development
 
 ```bash
+cp .env.example .env.local
+# fill in DATABASE_URL (Neon), ANTHROPIC_API_KEY, CLAUDE_MONTHLY_CAP
+
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+App on http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Database migrations
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+node --env-file=.env.local --import tsx scripts/migrate.ts
+```
 
-## Learn More
+### Data imports (one-time, after DB provisioning)
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+# Itqan narrator corpus (115k narrators, 22 source books)
+# (run the import scripts under scripts/ in order)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# Death-year overlay from AR-Sanad
+npx tsx scripts/import-arsanad-deaths-local.ts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# Mudallisīn list (Ibn Hajar's 5 tiers)
+npx tsx scripts/import-mudallisin.ts
 
-## Deploy on Vercel
+# Cities overlay from AR-Sanad
+npx tsx scripts/import-arsanad-cities.ts
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Deployment
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Recommended: **[Render](https://render.com)** Web Service.
+
+1. Push this repo to GitHub.
+2. Render Dashboard → New → Web Service → Connect the repo.
+3. Set env vars (see `.env.example` — `DATABASE_URL`, `ANTHROPIC_API_KEY`,
+   `CLAUDE_MONTHLY_CAP`, optional `NEXT_PUBLIC_SITE_URL`).
+4. Build command: `npm run build`. Start command: `npm start`.
+5. Free tier works (spins down after 15 min idle); $7/mo for always-on.
+
+Neon Postgres handles the DB; the same connection string used locally works
+in production unchanged.
+
+## Tests
+
+```bash
+npm test
+```
+
+52 tests covering segmenter, matcher, chronology, corpus, claude wrapper,
+rate limit, narrator lookup, and API routes.
+
+## Data sources (all open)
+
+- [Itqan](https://github.com/R3GENESI5/Itqan) — 22 rijāl books, MIT
+- [AhmedBaset/hadith-json](https://github.com/AhmedBaset/hadith-json) — 18 ḥadīth books, MIT
+- [AR-Sanad 280K](https://github.com/somaia02/Narrator-Disambiguation) — birth/death years and cities, CC-BY
+- Ibn Ḥajar's *Tabaqāt al-Mudallisīn* — public domain

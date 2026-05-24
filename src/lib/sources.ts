@@ -1,31 +1,238 @@
-// Itqan source-book key -> the Arabic title of the classical text.
-// 22 texts cover the dataset. A few key names are ambiguous as written; for
-// those, a plain Arabic equivalent is used rather than guessing the author.
-const SOURCE_BOOK_AR: Record<string, string> = {
-  taqrib: "تقريب التهذيب",
-  tahdhib_kamal: "تهذيب الكمال",
-  tahdhib_tahdhib: "تهذيب التهذيب",
-  mizan: "ميزان الاعتدال",
-  lisan_mizan: "لسان الميزان",
-  jarh: "الجرح والتعديل",
-  thiqat: "الثقات",
-  kamil: "الكامل في ضعفاء الرجال",
-  mughni_ducafa: "المغني في الضعفاء",
-  diwan_ducafa: "ديوان الضعفاء",
-  dhayl_diwan: "ذيل ديوان الضعفاء",
-  kashif: "الكاشف",
-  isaba: "الإصابة في تمييز الصحابة",
-  durar_kamina: "الدرر الكامنة",
-  tarikh_islam: "تاريخ الإسلام",
-  tarikh: "التاريخ",
-  siyar: "سير أعلام النبلاء",
-  tadhkirat_huffaz: "تذكرة الحفاظ",
-  tabaqat: "الطبقات",
-  mucin_tabaqat: "معين الطبقات",
-  mucjam_shuyukh: "معجم الشيوخ",
-  macrifa_qurra: "معرفة القراء الكبار",
+// Metadata for the 22 classical source-book keys Itqan uses.
+//
+// Each book has a methodological orientation that affects how you should read
+// its grading of a narrator:
+//   - jarh_leaning   = focuses on weak narrators; a "reliable" grade here is
+//                      strong taʿdīl evidence; absence may not be jarḥ.
+//   - tadil_leaning  = focuses on the trustworthy (e.g., Ibn Ḥibbān's Thiqāt,
+//                      famously lenient — inclusion alone proves little).
+//   - comprehensive  = aims for full coverage of a domain.
+//   - companions     = restricted to the Ṣaḥāba.
+//   - huffaz         = restricted to ḥadīth memorizers.
+//   - qurra          = restricted to Qurʾān reciters.
+//   - century        = restricted to one Hijrī century.
+
+export type BookOrientation =
+  | "jarh_leaning"
+  | "tadil_leaning"
+  | "comprehensive"
+  | "companions"
+  | "huffaz"
+  | "qurra"
+  | "century";
+
+export interface SourceBookMeta {
+  /** Itqan key (the source_book column value). */
+  key: string;
+  /** Arabic full title. */
+  titleAr: string;
+  /** Author (Arabic; "—" if uncertain). */
+  authorAr: string;
+  /** Author's death year (Hijrī, "—" if uncertain). */
+  authorDeath: string;
+  /** Methodological orientation — drives how to read inclusion. */
+  orientation: BookOrientation;
+  /** One-line Arabic description used as the tooltip / book caption. */
+  noteAr: string;
+}
+
+const META: Record<string, SourceBookMeta> = {
+  taqrib: {
+    key: "taqrib",
+    titleAr: "تقريب التهذيب",
+    authorAr: "ابن حجر العسقلاني",
+    authorDeath: "852 هـ",
+    orientation: "comprehensive",
+    noteAr: "خلاصة سطرٍ واحد لكل راوٍ من تهذيب التهذيب — أوسع مرجع للحكم المختصر.",
+  },
+  tahdhib_kamal: {
+    key: "tahdhib_kamal",
+    titleAr: "تهذيب الكمال",
+    authorAr: "المزّي",
+    authorDeath: "742 هـ",
+    orientation: "comprehensive",
+    noteAr: "ترجمة موسَّعة لكل رواة الكتب الستة، يشمل شيوخهم وتلاميذهم.",
+  },
+  tahdhib_tahdhib: {
+    key: "tahdhib_tahdhib",
+    titleAr: "تهذيب التهذيب",
+    authorAr: "ابن حجر العسقلاني",
+    authorDeath: "852 هـ",
+    orientation: "comprehensive",
+    noteAr: "تهذيب وتلخيص لتهذيب الكمال مع زيادات وتعقّبات.",
+  },
+  mizan: {
+    key: "mizan",
+    titleAr: "ميزان الاعتدال",
+    authorAr: "الذهبي",
+    authorDeath: "748 هـ",
+    orientation: "jarh_leaning",
+    noteAr: "مرجع جرحٍ موسَّع — يحوي كل من تُكلِّم فيه؛ وجود الراوي فيه قرينة جرح.",
+  },
+  lisan_mizan: {
+    key: "lisan_mizan",
+    titleAr: "لسان الميزان",
+    authorAr: "ابن حجر العسقلاني",
+    authorDeath: "852 هـ",
+    orientation: "jarh_leaning",
+    noteAr: "ذيل على الميزان يضمّ من ليس في تهذيب الكمال — جرحي الطابع.",
+  },
+  jarh: {
+    key: "jarh",
+    titleAr: "الجرح والتعديل",
+    authorAr: "ابن أبي حاتم الرازي",
+    authorDeath: "327 هـ",
+    orientation: "comprehensive",
+    noteAr: "أصل من أصول الجرح والتعديل، ينقل عن متقدّمي النقّاد.",
+  },
+  thiqat: {
+    key: "thiqat",
+    titleAr: "الثقات",
+    authorAr: "ابن حبّان",
+    authorDeath: "354 هـ",
+    orientation: "tadil_leaning",
+    noteAr: "كتاب توثيق — لكنّه واسع التساهل؛ ذكر الراوي فيه ليس وحده تعديلاً قاطعاً.",
+  },
+  kamil: {
+    key: "kamil",
+    titleAr: "الكامل في ضعفاء الرجال",
+    authorAr: "ابن عدي الجرجاني",
+    authorDeath: "365 هـ",
+    orientation: "jarh_leaning",
+    noteAr: "مرجع جرحٍ مهم في الضعفاء، يسوق أحاديث المُتَكَلَّم فيهم.",
+  },
+  mughni_ducafa: {
+    key: "mughni_ducafa",
+    titleAr: "المغني في الضعفاء",
+    authorAr: "الذهبي",
+    authorDeath: "748 هـ",
+    orientation: "jarh_leaning",
+    noteAr: "ملخَّص للضعفاء فحسب — ذكر الراوي فيه قرينة قويّة على الجرح.",
+  },
+  diwan_ducafa: {
+    key: "diwan_ducafa",
+    titleAr: "ديوان الضعفاء",
+    authorAr: "الذهبي",
+    authorDeath: "748 هـ",
+    orientation: "jarh_leaning",
+    noteAr: "ديوان مختصر للمتكلَّم فيهم — جرحي.",
+  },
+  dhayl_diwan: {
+    key: "dhayl_diwan",
+    titleAr: "ذيل ديوان الضعفاء",
+    authorAr: "الذهبي",
+    authorDeath: "748 هـ",
+    orientation: "jarh_leaning",
+    noteAr: "تكملةٌ على ديوان الضعفاء.",
+  },
+  kashif: {
+    key: "kashif",
+    titleAr: "الكاشف",
+    authorAr: "الذهبي",
+    authorDeath: "748 هـ",
+    orientation: "comprehensive",
+    noteAr: "مختصر لرواة الكتب الستة مع حكم الذهبي.",
+  },
+  isaba: {
+    key: "isaba",
+    titleAr: "الإصابة في تمييز الصحابة",
+    authorAr: "ابن حجر العسقلاني",
+    authorDeath: "852 هـ",
+    orientation: "companions",
+    noteAr: "موسوعة الصحابة — ذكر الراوي فيه إثبات صحبة لا حكم على ضبط أو عدالة.",
+  },
+  durar_kamina: {
+    key: "durar_kamina",
+    titleAr: "الدرر الكامنة",
+    authorAr: "ابن حجر العسقلاني",
+    authorDeath: "852 هـ",
+    orientation: "century",
+    noteAr: "تراجم أعيان القرن الثامن الهجري.",
+  },
+  tarikh_islam: {
+    key: "tarikh_islam",
+    titleAr: "تاريخ الإسلام",
+    authorAr: "الذهبي",
+    authorDeath: "748 هـ",
+    orientation: "comprehensive",
+    noteAr: "تاريخ عام مع تراجم — أوسع تاريخ رجاليّ للذهبي.",
+  },
+  tarikh: {
+    key: "tarikh",
+    titleAr: "التاريخ الكبير",
+    authorAr: "البخاري",
+    authorDeath: "256 هـ",
+    orientation: "comprehensive",
+    noteAr: "أصل قديم للرواة، إذ كان البخاري إماماً في العلل والرجال.",
+  },
+  siyar: {
+    key: "siyar",
+    titleAr: "سير أعلام النبلاء",
+    authorAr: "الذهبي",
+    authorDeath: "748 هـ",
+    orientation: "comprehensive",
+    noteAr: "سير أعلام الأمة — ميزانٌ مهم لأحكام الذهبي.",
+  },
+  tadhkirat_huffaz: {
+    key: "tadhkirat_huffaz",
+    titleAr: "تذكرة الحفّاظ",
+    authorAr: "الذهبي",
+    authorDeath: "748 هـ",
+    orientation: "huffaz",
+    noteAr: "تذكرة بأهل الحفظ من المحدّثين — ذكر الراوي فيه قرينة قوّة وضبط.",
+  },
+  tabaqat: {
+    key: "tabaqat",
+    titleAr: "الطبقات الكبرى",
+    authorAr: "ابن سعد",
+    authorDeath: "230 هـ",
+    orientation: "comprehensive",
+    noteAr: "طبقات الرواة على عصرهم — أوّل من رتّب على هذا النحو.",
+  },
+  mucin_tabaqat: {
+    key: "mucin_tabaqat",
+    titleAr: "المعين في طبقات المحدّثين",
+    authorAr: "الذهبي",
+    authorDeath: "748 هـ",
+    orientation: "comprehensive",
+    noteAr: "تصنيف الرواة في طبقات لمعرفة المعاصرة وإمكان اللقاء.",
+  },
+  mucjam_shuyukh: {
+    key: "mucjam_shuyukh",
+    titleAr: "معجم الشيوخ",
+    authorAr: "—",
+    authorDeath: "—",
+    orientation: "comprehensive",
+    noteAr: "معجمٌ يجمع شيوخ المؤلِّف — وثيقة للقاء المعاصرة.",
+  },
+  macrifa_qurra: {
+    key: "macrifa_qurra",
+    titleAr: "معرفة القرّاء الكبار",
+    authorAr: "الذهبي",
+    authorDeath: "748 هـ",
+    orientation: "qurra",
+    noteAr: "تراجم القرّاء — ذكر الراوي فيه يفيد إمامته في القراءات لا في الحديث بالضرورة.",
+  },
+};
+
+const ORIENTATION_LABEL_AR: Record<BookOrientation, string> = {
+  jarh_leaning: "كتاب جرح",
+  tadil_leaning: "كتاب تعديل (متساهل)",
+  comprehensive: "شامل",
+  companions: "خاصّ بالصحابة",
+  huffaz: "خاصّ بالحفّاظ",
+  qurra: "خاصّ بالقرّاء",
+  century: "خاصّ بقرن معيَّن",
 };
 
 export function sourceBookAr(key: string): string {
-  return SOURCE_BOOK_AR[key] ?? key;
+  return META[key]?.titleAr ?? key;
+}
+
+export function sourceBookMeta(key: string): SourceBookMeta | null {
+  return META[key] ?? null;
+}
+
+export function orientationLabel(o: BookOrientation): string {
+  return ORIENTATION_LABEL_AR[o];
 }

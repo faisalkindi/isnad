@@ -43,3 +43,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# one-off debug/probe scripts (filename starts with underscore)
+scripts/_*.ts

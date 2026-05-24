@@ -16,7 +16,11 @@ const MIN_HEARING_AGE = 7;
 // If S.death - T.death > this number, S was too young when T died.
 const STUDENT_AGE_THRESHOLD = MAX_LIFESPAN - MIN_HEARING_AGE; // 93
 
-export type LinkStatus = "possible" | "impossible" | "unknown";
+// `attested` is stronger than `possible`: it means an explicit teacher-student
+// edge for this pair exists in Itqan's `transmission` table (extracted from the
+// rijāl literature, e.g., Tahdhīb al-Kamāl). It is what classical scholars
+// call "ثبوت اللقاء" — proven meeting, the Bukhārī standard for اتصال.
+export type LinkStatus = "attested" | "possible" | "impossible" | "unknown";
 
 export interface ChronologyInput {
   death: string | null;
