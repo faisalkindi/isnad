@@ -8,10 +8,12 @@ import { callClaude } from "../claude";
 import { getCached, setCached, inputHash } from "./cache";
 import { checkLink, type LinkStatus } from "./chronology";
 import { findHadithMatches, type HadithMatch } from "./corpus";
+import { detectNisbah, type NisbahResult } from "./nisbah";
 import { query } from "../db";
 import { normalizeArabic } from "../normalize";
 export type { HadithMatch } from "./corpus";
 export type { ReceiveFormula } from "./segment";
+export type { NisbahResult, NisbahType } from "./nisbah";
 
 export type MatchStatus = "matched" | "needs_review" | "not_found";
 export type Confidence = "high" | "medium" | "low";
@@ -86,6 +88,9 @@ export interface MatchResult {
   matn: string;
   /** Hadiths from the corpus whose text matches the matn. */
   corpus_matches: HadithMatch[];
+  /** Classification by ascription («تقسيم الحديث من حيث نسبته إلى قائله»):
+   *  مرفوع / موقوف / مقطوع / قدسي. */
+  nisbah: NisbahResult;
 }
 
 interface Decision {
@@ -574,20 +579,61 @@ export async function matchChain(rawText: string): Promise<MatchResult> {
     };
   });
 
-  // Append the Prophet ﷺ as the source of the chain. Every hadith ends at him.
+  // Classify by «نسبته إلى قائله» BEFORE deciding whether to append the
+  // Prophet. A mawqūf hadith ends at a Companion, a maqṭūʿ ends at a Tābiʿī,
+  // and neither has the Prophet at the top of the chain.
+  const lastMatched = [...narrators].reverse().find((n) => n.narrator) ?? null;
+  const nisbah = detectNisbah({
+    rawText,
+    matn,
+    lastNarrator: lastMatched?.narrator
+      ? {
+          tabaqat: lastMatched.narrator.tabaqat,
+          grade_ar: lastMatched.narrator.grade_ar,
+          grade_en: lastMatched.narrator.grade_en,
+        }
+      : null,
+  });
+
+  // Only append the Prophet ﷺ when the hadith is actually attributed to him.
+  const isRaisedToProphet =
+    nisbah.type === "marfu_sarih" ||
+    nisbah.type === "marfu_hukman" ||
+    nisbah.type === "qudsi";
   const fullNarrators =
-    narrators.length > 0 ? [...narrators, makeProphet(narrators.length)] : narrators;
+    narrators.length > 0 && isRaisedToProphet
+      ? [...narrators, makeProphet(narrators.length)]
+      : narrators;
 
   const links = await computeLinks(fullNarrators);
-  const { verdict, reason } = chainVerdict(fullNarrators, links);
+  const baseVerdict = chainVerdict(fullNarrators, links);
+
+  // For mawqūf/maqṭūʿ chains, adjust the positive-verdict reason so it doesn't
+  // claim "اتصل الإسناد ... إلى منتهاه" (which implies reaching the Prophet).
+  let finalReason = baseVerdict.reason;
+  if (!isRaisedToProphet && lastMatched?.narrator) {
+    if (nisbah.type === "mawquf") {
+      finalReason = baseVerdict.reason.replace(
+        /اتصل\s+الإسناد[^.]*\.?/,
+        `اتصل الإسناد إلى ${lastMatched.narrator.full_name.slice(0, 40)} (موقوفًا عليه).`,
+      );
+    } else if (nisbah.type === "maqtu") {
+      finalReason = baseVerdict.reason.replace(
+        /اتصل\s+الإسناد[^.]*\.?/,
+        `اتصل الإسناد إلى ${lastMatched.narrator.full_name.slice(0, 40)} (مقطوعًا عليه).`,
+      );
+    }
+  }
+
   const corpus_matches = matn ? await findHadithMatches(matn) : [];
   const result: MatchResult = {
     narrators: fullNarrators,
     links,
-    chain_verdict: verdict,
-    chain_reason: reason,
+    chain_verdict: baseVerdict.verdict,
+    chain_reason: finalReason,
     matn,
     corpus_matches,
+    nisbah,
   };
   await setCached(hash, result);
   return result;

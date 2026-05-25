@@ -14,7 +14,9 @@ const mockClaude = vi.mocked(callClaude);
 
 // Inputs unique to this file, so the shared match_cache table can't leak
 // results between tests or between test files running in parallel.
-const MATCH_INPUT = "أخبرنا الزهري";
+// Include a Prophet reference so nisbah detection correctly identifies this
+// as marfūʿ and appends the Prophet ﷺ to the chain.
+const MATCH_INPUT = "أخبرنا الزهري عن النبي صلى الله عليه وسلم قال";
 const HALLUCINATION_INPUT = "أنبأنا الزهري";
 const NOT_FOUND_INPUT = "عن zzzqqqxxx";
 const ALL_INPUTS = [MATCH_INPUT, HALLUCINATION_INPUT, NOT_FOUND_INPUT];

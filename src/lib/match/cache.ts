@@ -11,7 +11,9 @@ import type { MatchResult } from "./matcher";
 //   v4 — Companion carve-out applied to harshest_grade_en and disagreement
 //   v5 — segmenter resolves «قالا» multi-compiler + «أبيه/جده» relative refs
 //   v6 — segmenter preserves disambiguating attrs (مولى X, الأنصاري, الكوفي…)
-const CACHE_VERSION = "v6";
+//   v7 — nisbah classification (مرفوع/موقوف/مقطوع/قدسي); Prophet appended only
+//        when actually raised to him; verdict reason reflects ascription
+const CACHE_VERSION = "v7";
 
 /** Stable cache key for a pasted isnād. Includes a policy version so that
  *  shape/verdict changes auto-invalidate without manual cache wipes. */

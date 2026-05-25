@@ -5,6 +5,8 @@ import type {
   ChainVerdict,
   HadithMatch,
   MatchResult,
+  NisbahResult,
+  NisbahType,
 } from "@/lib/match/matcher";
 import { IsnadDiagram } from "@/components/IsnadDiagram";
 
@@ -46,6 +48,52 @@ const VERDICT_STYLE: Record<
     symbol: "⚠",
   },
 };
+
+/** Visual tag for the «نسبته إلى قائله» classification. Color-coded so
+ *  marfūʿ (Prophet) is most prominent, qudsī gets a special amber, and
+ *  mawqūf/maqṭūʿ are muted to match their classical secondary status. */
+const NISBAH_STYLE: Record<
+  NisbahType,
+  { className: string; symbol: string }
+> = {
+  marfu_sarih: {
+    className: "bg-blue-100 text-blue-900 border-blue-300",
+    symbol: "ﷺ",
+  },
+  marfu_hukman: {
+    className: "bg-sky-100 text-sky-900 border-sky-300",
+    symbol: "ﷺ",
+  },
+  qudsi: {
+    className: "bg-amber-100 text-amber-900 border-amber-300",
+    symbol: "✦",
+  },
+  mawquf: {
+    className: "bg-purple-100 text-purple-900 border-purple-300",
+    symbol: "◐",
+  },
+  maqtu: {
+    className: "bg-gray-100 text-gray-900 border-gray-300",
+    symbol: "○",
+  },
+  unknown: {
+    className: "bg-gray-50 text-gray-700 border-gray-200",
+    symbol: "؟",
+  },
+};
+
+function NisbahBadge({ nisbah }: { nisbah: NisbahResult }) {
+  const s = NISBAH_STYLE[nisbah.type];
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-sm font-medium ${s.className}`}
+      title={nisbah.reason}
+    >
+      <span aria-hidden>{s.symbol}</span>
+      <span>{nisbah.label}</span>
+    </span>
+  );
+}
 
 function RuleFooter() {
   return (
@@ -400,6 +448,9 @@ export default function HomePage() {
                     <div className="flex items-center gap-2 text-lg font-bold">
                       <span aria-hidden>{v.symbol}</span>
                       <span>{v.label}</span>
+                      {result.nisbah && (
+                        <NisbahBadge nisbah={result.nisbah} />
+                      )}
                     </div>
                     <p className="mt-1 text-sm">{result.chain_reason}</p>
                   </div>

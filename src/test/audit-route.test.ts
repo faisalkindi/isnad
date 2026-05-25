@@ -40,7 +40,9 @@ describe("POST /api/audit", () => {
 
   it("returns a matched chain for a valid isnād", async () => {
     const candidates = await findCandidates("الزهري");
-    const input = "حدثنا الزهري";
+    // Include a Prophet reference so nisbah detection identifies marfūʿ
+    // and the Prophet ﷺ is appended to the chain.
+    const input = "حدثنا الزهري عن النبي صلى الله عليه وسلم قال";
     await query("DELETE FROM match_cache WHERE input_hash = $1", [
       inputHash(input),
     ]);

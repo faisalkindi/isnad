@@ -1,0 +1,41 @@
+feat: classify hadith by نسبته إلى قائله (مرفوع/موقوف/مقطوع/قدسي)
+
+Adds the classical division «تقسيم الحديث من حيث نسبته إلى قائله» as a
+per-audit classification displayed prominently next to the verdict badge.
+
+Categories detected (verified against Ibn al-Salah's Muqaddima, al-Nawawi's
+Taqrib, and Ibn Hajar's Nukhbat al-Fikr):
+
+  - مرفوع صريح    — explicit Prophet ascription (قال رسول الله / النبي / ﷺ)
+  - مرفوع حكماً   — Companion + implicit-raising marker (أمرنا/نهينا/يرفعه/
+                    يبلغ به النبي/رواية/من السنة)
+  - حديث قدسي     — marfu + divine speech via the Prophet (قال الله / يقول
+                    الله / فيما يرويه عن ربه)
+  - موقوف         — last narrator is a Companion, no Prophet attribution
+  - مقطوع         — last narrator is a Tabi'i, no Prophet attribution
+
+Bug fix that fell out of this:
+  - Previously the Prophet ﷺ was appended to EVERY chain regardless of
+    whether the hadith was actually attributed to him. Now the Prophet
+    is appended only for marfu_* and qudsi types. Mawquf/maqtu chains
+    correctly end at their terminal narrator.
+  - Verdict reasons for mawquf/maqtu now say "اتصل الإسناد إلى عمر بن الخطاب
+    (موقوفًا عليه)" instead of the marfu-implying "اتصل الإسناد إلى منتهاه".
+
+Implementation:
+  - New lib/match/nisbah.ts with detectNisbah() — pure function, regexes
+    operate on normalizeArabic-stripped text so tashkil doesn't break
+    detection (caught by smoke test: «أُمِرنا» wasn't matching until we
+    normalized the kasrah).
+  - MatchResult gains a `nisbah` field consumed by the UI.
+  - NisbahBadge in page.tsx renders next to the verdict with color-coded
+    style (blue marfu, amber qudsi, purple mawquf, gray maqtu).
+  - Cache version bumped to v7 to invalidate pre-nisbah cached results.
+  - Two test inputs updated to include Prophet references so the existing
+    "length=2" assertions still hold (the new logic correctly returns
+    length=1 for non-marfu chains).
+
+Verified locally on 5 known cases (Bukhari #1, mawquf, maqtu, qudsi,
+hukman) — 5/5 detected correctly. Tests: 52/52.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
