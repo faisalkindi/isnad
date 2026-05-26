@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ChainVerdict,
   HadithMatch,
@@ -1007,14 +1007,19 @@ export default function HomePage() {
   const hasContent =
     result && (result.narrators.length > 0 || result.corpus_matches.length > 0 || result.matn);
 
-  // Editor expansion — start expanded if no result, collapse once we have one
-  // (per verified UX practice: prompt input stays live but de-emphasised when
-  // results take focus).
+  // Editor expansion — start expanded if no result, auto-collapse on the
+  // first audit result. After that, the user controls it via the toggle.
+  // The auto-collapse must run as an effect (not in render) or it will
+  // slam the editor closed on every re-render and the toggle button looks
+  // like it does nothing.
   const [editorOpen, setEditorOpen] = useState(true);
-  if (result && editorOpen && !loading) {
-    // Collapse the moment we render a result for the first time.
-    setEditorOpen(false);
-  }
+  const autoCollapsed = useRef(false);
+  useEffect(() => {
+    if (result && !autoCollapsed.current) {
+      setEditorOpen(false);
+      autoCollapsed.current = true;
+    }
+  }, [result]);
 
   return (
     <main dir="rtl" className="page">
