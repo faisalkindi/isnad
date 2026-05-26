@@ -1144,9 +1144,7 @@ export default function HomePage() {
                 </div>
               </div>
               <blockquote className="matn">
-                <span className="matn-bracket" aria-hidden="true">﴿</span>
                 <p>{result.matn}</p>
-                <span className="matn-bracket" aria-hidden="true">﴾</span>
               </blockquote>
             </section>
           )}
