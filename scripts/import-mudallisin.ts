@@ -14,6 +14,9 @@ interface Entry {
   tier: number;
   name_ar: string;
   note: string;
+  /** TRUE for the four classical practitioners of تدليس التسوية
+   *  (Baqiyya b. al-Walid, al-Walid b. Muslim, al-A'mash, al-Thawri). */
+  practices_taswiya?: boolean;
 }
 
 interface MudallisFile {
@@ -105,21 +108,31 @@ async function main() {
   }
   const final = Array.from(byNarrator.values());
 
-  // Bulk UPDATE.
-  console.log("writing tadlis_tier...");
+  // Bulk UPDATE — tier + taswiya flag in one statement.
+  console.log("writing tadlis_tier + practices_taswiya...");
   const upd = await query<{ updated: string }>(
     `WITH inputs AS (
-       SELECT unnest($1::int[]) AS id, unnest($2::int[]) AS tier
+       SELECT unnest($1::int[])  AS id,
+              unnest($2::int[])  AS tier,
+              unnest($3::bool[]) AS taswiya
      ),
      updated AS (
-       UPDATE narrator SET tadlis_tier = i.tier
+       UPDATE narrator
+       SET tadlis_tier        = i.tier,
+           practices_taswiya  = i.taswiya
        FROM inputs i WHERE narrator.id = i.id
        RETURNING narrator.id
      )
      SELECT count(*)::text AS updated FROM updated`,
-    [final.map((f) => f.narratorId), final.map((f) => f.tier)],
+    [
+      final.map((f) => f.narratorId),
+      final.map((f) => f.tier),
+      final.map((f) => f.entry.practices_taswiya === true),
+    ],
   );
   console.log(`  UPDATE: ${upd.rows[0].updated} narrators tagged`);
+  const t = final.filter((f) => f.entry.practices_taswiya).length;
+  console.log(`  of those, ${t} are tagged practices_taswiya=TRUE`);
 
   // Show the matches.
   console.log("\n--- matches ---");

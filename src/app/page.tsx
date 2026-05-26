@@ -1,53 +1,336 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type {
   ChainVerdict,
   HadithMatch,
   MatchResult,
   NisbahResult,
   NisbahType,
+  TadlisSummary,
+  NumberClassification,
+  NumberClass,
+  SaqtClassification,
+  RankClassification,
+  AcceptanceClassification,
+  TanReason,
 } from "@/lib/match/matcher";
+// Import TAN_LABELS direct from classify.ts (pure, no DB deps) — going via
+// matcher.ts would drag `pg` into the client bundle.
+import { TAN_LABELS } from "@/lib/match/classify";
 import { IsnadDiagram } from "@/components/IsnadDiagram";
+import { shortName, primaryDeathYear } from "@/lib/names";
+import { sourceBookAr } from "@/lib/sources";
+import { lookupJarhTerm } from "@/lib/jarh-terms";
 
 const EXAMPLE =
   "حدثنا الحميدي عبد الله بن الزبير، قال: حدثنا سفيان، قال: حدثنا يحيى بن سعيد الأنصاري، قال: أخبرني محمد بن إبراهيم التيمي، أنه سمع علقمة بن وقاص الليثي، يقول: سمعت عمر بن الخطاب رضي الله عنه على المنبر، قال: سمعت رسول الله صلى الله عليه وسلم يقول: إنما الأعمال بالنيات وإنما لكل امرئ ما نوى";
 
-const VERDICT_STYLE: Record<
-  ChainVerdict,
-  { bg: string; text: string; label: string; symbol: string }
-> = {
-  sahih_candidate: {
-    bg: "bg-green-100 border-green-400",
-    text: "text-green-900",
-    label: "صحيح بظاهر الإسناد",
-    symbol: "✓",
-  },
-  hasan_candidate: {
-    bg: "bg-emerald-100 border-emerald-300",
-    text: "text-emerald-900",
-    label: "حسن بظاهر الإسناد",
-    symbol: "✓",
-  },
-  daif: {
-    bg: "bg-orange-100 border-orange-300",
-    text: "text-orange-900",
-    label: "ضعيف الإسناد",
-    symbol: "✗",
-  },
-  broken: {
-    bg: "bg-red-100 border-red-300",
-    text: "text-red-900",
-    label: "إسناد منقطع",
-    symbol: "✗",
-  },
-  needs_review: {
-    bg: "bg-amber-100 border-amber-300",
-    text: "text-amber-900",
-    label: "يحتاج إلى مراجعة",
-    symbol: "⚠",
-  },
-};
+const X_LIMIT = 280; // X (Twitter) free-tier post limit, verified 2026-05.
+
+const FOOTER = "— تدقيقٌ آليّ على ٢٢ كتاب رجال + ١٨ كتاب حديث.";
+
+const WEAK_HARSHEST = new Set([
+  "weak",
+  "abandoned",
+  "fabricator",
+  "matruk",
+  "majhul",
+]);
+
+function verdictLabelAr(v: ChainVerdict): string {
+  if (v === "sahih_candidate") return "ظاهره الصحة";
+  if (v === "hasan_candidate") return "ظاهره الحسن";
+  if (v === "daif") return "ضعيف";
+  if (v === "broken") return "منقطع";
+  return "يحتاج مراجعة";
+}
+
+/** For ḍaʿīf chains: find the weakest narrator (lowest tier per the matcher's
+ *  "always-harshest" policy). Returns null when no weak narrator is present
+ *  (e.g., a broken-but-otherwise-clean chain). */
+function findWeakestNarrator(result: MatchResult) {
+  for (const branch of result.branches) {
+    for (const n of branch.narrators) {
+      if (n.narrator && WEAK_HARSHEST.has(n.narrator.harshest_grade_en ?? "")) {
+        return n;
+      }
+    }
+  }
+  return null;
+}
+
+/** Build the WHY line for a ḍaʿīf verdict: name the weak narrator, the
+ *  harshest jarh against him verbatim, the critic who said it, and the
+ *  book it's in. This is the most-asked-for piece of any hadith verdict. */
+function explainDaif(result: MatchResult): string | null {
+  const weak = findWeakestNarrator(result);
+  if (!weak?.narrator) return null;
+  const n = weak.narrator;
+  const name = shortName(n.full_name);
+  const death = primaryDeathYear(n.death);
+  const deathTag = death ? ` (ت ${death.year})` : "";
+  const phrase = (n.harshest_grade_ar ?? "").trim();
+  const bookKey = n.harshest_source_book;
+  const bookAr = bookKey ? sourceBookAr(bookKey) : null;
+  // Try to locate the source_verdict whose text matches the harshest grade —
+  // gives us the actual critic's name (الدارقطني / ابن حبان / ابن معين …).
+  const sv = n.source_verdicts.find(
+    (v) =>
+      (bookKey == null || v.source_book === bookKey) &&
+      phrase.length > 0 &&
+      (v.verdict_ar.trim() === phrase || v.verdict_ar.includes(phrase)),
+  );
+  const critic = sv?.author_ar ?? null;
+  // Decode the classical jarh phrase into a plain-Arabic gloss the reader
+  // doesn't need to be a hadith specialist to understand.
+  const glossText = glossForJarhPhrase(phrase, critic);
+  const gloss = glossText ? ` — أي ${glossText}` : "";
+  if (critic && bookAr && phrase) {
+    return `العلّة: ${name}${deathTag} — قال ${critic} في «${bookAr}»: «${phrase}»${gloss}.`;
+  }
+  if (bookAr && phrase) {
+    return `العلّة: ${name}${deathTag} — في «${bookAr}»: «${phrase}»${gloss}.`;
+  }
+  if (phrase) {
+    return `العلّة: ${name}${deathTag} — «${phrase}»${gloss}.`;
+  }
+  return `العلّة: ${name}${deathTag}.`;
+}
+
+/** Look up a classical jarh phrase and return a short plain-Arabic
+ *  explanation. Drops the leading bracketing phrasing to flow inline. */
+function glossForJarhPhrase(phrase: string, critic: string | null): string | null {
+  const term = lookupJarhTerm(phrase);
+  if (!term) return null;
+  // Ibn Maʿīn used some phrases with a softer meaning; surface the caveat
+  // only when his name is the named critic.
+  const isIbnMaeen = critic != null && /ابن\s*مَ?عين|يحيى\s*بن\s*مَ?عين/.test(critic);
+  const base = term.explanation.trim().replace(/\.$/, "");
+  if (isIbnMaeen && term.caveat) {
+    // The caveat already includes "تنبه إذا كان القائل ابن معين" — keep short.
+    return `${base} (لكنّ ابن معين قد يقصد به: أحاديثه قليلة)`;
+  }
+  return base;
+}
+
+/** Build a "supporting evidence" line for sahih/hasan chains: cite the
+ *  strongest verb-attestation we have for any link (e.g., samaa in al-Tarikh
+ *  al-Kabir, or attested in Tahdhib al-Kamal). Returns null if no evidence
+ *  beyond chronology is available. */
+function evidenceLine(result: MatchResult): string | null {
+  const allLinks = result.branches.flatMap((b) => b.links);
+  // Prefer samaa (strongest); otherwise any verb evidence.
+  const samaaLink = allLinks.find((l) => l.attestation_verb?.verb === "samaa");
+  if (samaaLink?.attestation_verb) {
+    return `الدليل: «${samaaLink.attestation_verb.phrase_ar ?? "ثبت السماع"}» — في «التاريخ الكبير للبخاري».`;
+  }
+  // Otherwise note source-book attestation if rich.
+  const richSrcLink = allLinks.find(
+    (l) => l.source_books && l.source_books.length >= 2,
+  );
+  if (richSrcLink?.source_books) {
+    return `الدليل: الإسناد موثَّق في كتب الرجال الكلاسيكية (${richSrcLink.source_books.length} كتاب).`;
+  }
+  return null;
+}
+
+/** Build the WHY line for a broken chain: prefer a documented non-meeting
+ *  citation (al-Marāsīl) over chronology; fall back to chronology. */
+function explainBroken(result: MatchResult): string | null {
+  // Highest priority: documented non-meeting from al-Marāsīl etc.
+  for (const branch of result.branches) {
+    const docNoMeet = branch.links.find((l) => l.documented_non_meeting);
+    if (docNoMeet?.documented_non_meeting) {
+      const student = branch.narrators.find((n) => n.position === docNoMeet.from_position);
+      const teacher = branch.narrators.find((n) => n.position === docNoMeet.to_position);
+      const studentName = student?.narrator ? shortName(student.narrator.full_name) : student?.fragment ?? "؟";
+      const teacherName = teacher?.narrator ? shortName(teacher.narrator.full_name) : teacher?.fragment ?? "؟";
+      return `الانقطاع: ${studentName} ← ${teacherName} — «${docNoMeet.documented_non_meeting.phrase_ar}» (من «المراسيل لابن أبي حاتم»).`;
+    }
+  }
+  for (const branch of result.branches) {
+    const bad = branch.links.find((l) => l.status === "impossible");
+    if (!bad) continue;
+    const student = branch.narrators.find((n) => n.position === bad.from_position);
+    const teacher = branch.narrators.find((n) => n.position === bad.to_position);
+    const studentName = student?.narrator
+      ? shortName(student.narrator.full_name)
+      : student?.fragment ?? "؟";
+    const teacherName = teacher?.narrator
+      ? shortName(teacher.narrator.full_name)
+      : teacher?.fragment ?? "؟";
+    return `الانقطاع: ${studentName} ← ${teacherName} — ${bad.reason}`;
+  }
+  return null;
+}
+
+/** Build a tight Arabic summary of the verdict suitable for a single X post.
+ *  Greedy: appends sections in priority order, stops/truncates so the result
+ *  fits in X_LIMIT characters. URLs are not embedded — the user can add their
+ *  own (every t.co URL counts as 23 chars regardless of length).
+ *
+ *  Priority (high → low): headline, meta, EXPLANATION (why), saqṭ note, tadlīs
+ *  warning, multi-branch note, corpus matches, footer. The explanation is
+ *  considered essential for any non-sahih verdict and is preserved before
+ *  corpus matches if the budget gets tight. */
+function buildShareText(result: MatchResult): string {
+  const headline = result.rank
+    ? `📜 الحُكْم: ${result.rank.label}${result.acceptance ? ` · ${result.acceptance.label}` : ""}`
+    : `📜 ${verdictLabelAr(result.chain_verdict)}`;
+
+  const metaBits: string[] = [];
+  if (result.nisbah?.label && result.nisbah.type !== "unknown") metaBits.push(result.nisbah.label);
+  if (result.number?.label) metaBits.push(`${result.number.label} في كتبنا`);
+  const meta = metaBits.join(" · ");
+
+  // For ضعيف and منقطع we surface the WHY (which narrator / which broken link).
+  // For ظاهره الصحة / الحسن we surface the EVIDENCE (samaa attestation, source books).
+  const explanation =
+    result.chain_verdict === "daif"
+      ? explainDaif(result)
+      : result.chain_verdict === "broken"
+        ? explainBroken(result)
+        : result.chain_verdict === "sahih_candidate" || result.chain_verdict === "hasan_candidate"
+          ? evidenceLine(result)
+          : null;
+
+  const saqt =
+    result.saqt && result.saqt.type !== "none"
+      ? `نوع الانقطاع: ${result.saqt.label}`
+      : null;
+
+  const tadlis = result.tadlis?.hasTaswiya
+    ? "⚠ يُحتمَل تدليس التسوية في الإسناد."
+    : result.tadlis?.hasIsnad
+      ? "⚠ يُحتمَل تدليس الإسناد (راوٍ مدلِّس عَنْعَن)."
+      : null;
+
+  const branchNote = result.has_multiple_branches
+    ? `📚 ${result.branches.length} طُرُق (اعتبار).`
+    : null;
+
+  // Required (in order): headline, meta, explanation, footer. Everything
+  // else competes for the remaining budget.
+  const required = [headline, meta, explanation, FOOTER].filter(Boolean) as string[];
+  let text = required.join("\n");
+
+  // If the required block alone overflows, truncate the explanation's quote.
+  if (text.length > X_LIMIT && explanation) {
+    const truncated = truncateExplanation(explanation, X_LIMIT - (text.length - explanation.length));
+    text = [headline, meta, truncated, FOOTER].filter(Boolean).join("\n");
+  }
+
+  // Optional, in priority order.
+  const optionals: string[] = [];
+  if (saqt) optionals.push(saqt);
+  if (tadlis) optionals.push(tadlis);
+  if (branchNote) optionals.push(branchNote);
+
+  for (const opt of optionals) {
+    const candidate = insertBeforeFooter(text, opt);
+    if (candidate.length <= X_LIMIT) text = candidate;
+  }
+
+  // Corpus matches: greedy-fit as many as possible.
+  if (result.corpus_matches.length > 0) {
+    const cites = result.corpus_matches
+      .slice(0, 5)
+      .map((m) =>
+        m.hadith_in_book != null
+          ? `${m.book_name_ar} (${m.hadith_in_book})`
+          : m.book_name_ar,
+      );
+    for (let n = cites.length; n >= 1; n--) {
+      const line = `أخرجه: ${cites.slice(0, n).join("، ")}`;
+      const candidate = insertBeforeFooter(text, line);
+      if (candidate.length <= X_LIMIT) {
+        text = candidate;
+        break;
+      }
+    }
+  }
+
+  if (text.length > X_LIMIT) text = text.slice(0, X_LIMIT - 1) + "…";
+  return text;
+}
+
+function insertBeforeFooter(text: string, line: string): string {
+  const lines = text.split("\n");
+  lines.splice(lines.length - 1, 0, line);
+  return lines.join("\n");
+}
+
+function truncateExplanation(explanation: string, maxLen: number): string {
+  if (explanation.length <= maxLen) return explanation;
+  // Try shrinking the «verbatim quote» first.
+  const quoteMatch = explanation.match(/«([^»]+)»/);
+  if (quoteMatch) {
+    const quote = quoteMatch[1];
+    const overshoot = explanation.length - maxLen;
+    const newQuoteLen = Math.max(8, quote.length - overshoot - 1);
+    if (newQuoteLen < quote.length) {
+      const shortenedQuote = quote.slice(0, newQuoteLen).trimEnd() + "…";
+      return explanation.replace(`«${quote}»`, `«${shortenedQuote}»`);
+    }
+  }
+  return explanation.slice(0, maxLen - 1) + "…";
+}
+
+function ShareBox({ result }: { result: MatchResult }) {
+  const text = useMemo(() => buildShareText(result), [result]);
+  const [copied, setCopied] = useState(false);
+  const remaining = X_LIMIT - text.length;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Fallback: leave the textarea so the user can manually select/copy.
+    }
+  };
+  const xIntent = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+  return (
+    <section className="card share-card">
+      <div className="section-head">
+        <div>
+          <div className="section-eyebrow">للنشر</div>
+          <h2 className="section-title">نسخةٌ جاهزة للنشر على X</h2>
+        </div>
+        <span
+          className="share-counter"
+          style={{
+            color: remaining < 0 ? "var(--red-500, oklch(0.55 0.18 30))" : "var(--ink-3)",
+          }}
+        >
+          {text.length} / {X_LIMIT}
+        </span>
+      </div>
+      <textarea
+        className="share-textarea"
+        readOnly
+        value={text}
+        rows={Math.min(10, text.split("\n").length + 1)}
+        dir="rtl"
+        onFocus={(e) => e.currentTarget.select()}
+      />
+      <div className="share-actions">
+        <button type="button" className="primary-btn" onClick={copy}>
+          {copied ? "✓ نُسِخ" : "نسخ النص"}
+        </button>
+        <a
+          className="share-x-btn"
+          href={xIntent}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          نشر على X ↗
+        </a>
+      </div>
+    </section>
+  );
+}
 
 /** Visual tag for the «نسبته إلى قائله» classification. Color-coded so
  *  marfūʿ (Prophet) is most prominent, qudsī gets a special amber, and
@@ -82,16 +365,273 @@ const NISBAH_STYLE: Record<
   },
 };
 
+/** Color-coded number-class badge (متواتر/مشهور/عزيز/غريب). متواتر is awarded
+ *  only when per-طبقة alignment confirms ≥10 distinct narrators at the
+ *  narrowest level — Ibn Ḥajar's classical condition. */
+const NUMBER_STYLE: Record<NumberClass, string> = {
+  mutawatir: "bg-indigo-100 text-indigo-900 border-indigo-300",
+  mashhur: "bg-blue-100 text-blue-900 border-blue-300",
+  aziz: "bg-cyan-100 text-cyan-900 border-cyan-300",
+  gharib_mutlaq: "bg-amber-100 text-amber-900 border-amber-300",
+  gharib_nisbi: "bg-yellow-100 text-yellow-900 border-yellow-300",
+  unknown: "bg-gray-100 text-gray-700 border-gray-300",
+};
+
+/** Map rank/acceptance/number/etc. tier → prototype's .pill-* color class. */
+function pillToneFor(kind: "rank" | "acceptance" | "number" | "saqt", type: string): string {
+  if (kind === "rank") {
+    if (type === "sahih_li_dhatih" || type === "sahih_li_ghayrih") return "pill-strong";
+    if (type === "hasan_li_dhatih" || type === "hasan_li_ghayrih") return "pill-good";
+    if (type === "daif") return "pill-weak";
+    if (type === "broken") return "pill-rejected";
+    return "pill-neutral";
+  }
+  if (kind === "acceptance") {
+    if (type === "maqbul") return "pill-strong";
+    if (type === "mardud") return "pill-rejected";
+    return "pill-neutral";
+  }
+  if (kind === "number") {
+    if (type === "mutawatir") return "pill-strong";
+    if (type === "mashhur") return "pill-good";
+    if (type === "aziz") return "pill-good";
+    if (type === "gharib_mutlaq" || type === "gharib_nisbi") return "pill-weak";
+    return "pill-neutral";
+  }
+  if (kind === "saqt") {
+    if (type === "none") return "pill-neutral";
+    return "pill-rejected";
+  }
+  return "pill-neutral";
+}
+
+function NumberBadge({ number }: { number: NumberClassification }) {
+  const tone = pillToneFor("number", number.type);
+  return (
+    <span className={`pill pill-md ${tone}`} title={number.reason + "  ·  (في كتبنا)"}>
+      <span className="pill-dot" aria-hidden="true" />
+      {number.label}
+      <span style={{ fontSize: 11, opacity: 0.7, marginInlineStart: 4 }}>في كتبنا</span>
+    </span>
+  );
+}
+
+function AcceptanceBadge({ acceptance }: { acceptance: AcceptanceClassification }) {
+  const tone = pillToneFor("acceptance", acceptance.type);
+  return (
+    <span className={`pill pill-md ${tone}`} title={acceptance.reason}>
+      <span className="pill-dot" aria-hidden="true" />
+      {acceptance.label}
+    </span>
+  );
+}
+
+function RankBadge({ rank }: { rank: RankClassification }) {
+  const tone = pillToneFor("rank", rank.type);
+  return (
+    <span className={`pill pill-xl ${tone}`} title={rank.reason}>
+      <span className="pill-dot" aria-hidden="true" />
+      {rank.label}
+    </span>
+  );
+}
+
+function SaqtBadge({ saqt }: { saqt: SaqtClassification }) {
+  if (saqt.type === "none") return null;
+  return (
+    <span className="pill pill-md pill-rejected" title={saqt.reason}>
+      <span className="pill-dot" aria-hidden="true" />
+      نوع الانقطاع: {saqt.label}
+    </span>
+  );
+}
+
+/** Determine whether a narrator's effective grade is قادح (disqualifying) per
+ *  classical usage: weak/abandoned/fabricator → قادح; reliable/mostly_reliable
+ *  → غير قادح (note worthy but not chain-breaking). Mirrors `effectiveGrade`. */
+function isQadih(gradeEn: string | null): boolean {
+  if (!gradeEn) return false;
+  return ["weak", "abandoned", "fabricator", "matruk", "majhul"].includes(gradeEn);
+}
+
+type TanRowNarrator = {
+  position: number;
+  fragment: string;
+  narrator: {
+    full_name: string;
+    harshest_grade_en: string | null;
+    source_verdicts: { author_ar: string; verdict_ar: string; source_book: string }[];
+  } | null;
+};
+
+function TanPanel({
+  narrators,
+  tan,
+}: {
+  narrators: TanRowNarrator[];
+  tan: { position: number; reasons: TanReason[] }[];
+}) {
+  if (tan.length === 0) return null;
+  const anyQadih = tan.some((t) => {
+    const n = narrators.find((x) => x.position === t.position);
+    return isQadih(n?.narrator?.harshest_grade_en ?? null);
+  });
+  const summary = anyQadih
+    ? "أُحصِيَ على بعض رواة هذا الإسناد جرحٌ قادح — انظر العمود الأخير."
+    : "أُحصِي على رواة هذا الإسناد كلامٌ يسير، لم يقدح في الإسناد جملةً.";
+  return (
+    <>
+      <p style={{ fontSize: 13.5, color: "var(--ink-2)", margin: "0 0 8px" }}>{summary}</p>
+      <div className="taan-table">
+        <div className="taan-row taan-head">
+          <div>الراوي</div>
+          <div>الطاعن</div>
+          <div>سبب الطعن</div>
+          <div>الحكم</div>
+        </div>
+        {tan.map((t, i) => {
+          const n = narrators.find((x) => x.position === t.position);
+          const name = n?.narrator?.full_name?.slice(0, 60) ?? n?.fragment ?? "?";
+          const critics = Array.from(
+            new Set((n?.narrator?.source_verdicts ?? []).map((v) => v.author_ar).filter(Boolean)),
+          ).slice(0, 3);
+          const criticsText = critics.length > 0 ? critics.join("، ") : "—";
+          const reasonsText = t.reasons
+            .map((r) => {
+              const lbl = TAN_LABELS[r];
+              const cat = lbl.cat === "adala" ? "في العدالة" : "في الضبط";
+              return `${lbl.ar} (${cat})`;
+            })
+            .join(" + ");
+          const qadih = isQadih(n?.narrator?.harshest_grade_en ?? null);
+          return (
+            <div className="taan-row" key={i}>
+              <div style={{ fontFamily: "var(--f-display)", fontSize: 15, fontWeight: 700 }}>{name}</div>
+              <div style={{ color: "var(--ink-2)" }}>{criticsText}</div>
+              <div style={{ color: "var(--ink-1)", lineHeight: 1.65 }}>{reasonsText}</div>
+              <div>
+                <span className={`pill pill-md ${qadih ? "pill-rejected" : "pill-neutral"}`}>
+                  <span className="pill-dot" aria-hidden="true" />
+                  {qadih ? "قادح" : "غير قادح"}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="taan-foot">
+        مرجع التصنيف: المراتب الثمانية للجرح والتعديل عند ابن أبي حاتم والذهبي وابن حجر.
+      </p>
+    </>
+  );
+}
+
 function NisbahBadge({ nisbah }: { nisbah: NisbahResult }) {
   const s = NISBAH_STYLE[nisbah.type];
+  const tone =
+    nisbah.type === "marfu_sarih" || nisbah.type === "marfu_hukman"
+      ? "pill-sahabi"
+      : nisbah.type === "qudsi"
+        ? "pill-weak"
+        : "pill-neutral";
   return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-sm font-medium ${s.className}`}
-      title={nisbah.reason}
-    >
+    <span className={`pill pill-md ${tone}`} title={nisbah.reason}>
       <span aria-hidden>{s.symbol}</span>
-      <span>{nisbah.label}</span>
+      {nisbah.label}
     </span>
+  );
+}
+
+/** Surfaces chain-level tadlīs classification («تقسيمات التدليس»). Three known
+ *  types: الإسناد، التسوية، الشيوخ. We auto-detect the first two; the third
+ *  requires a curated obscure-names database we don't have yet. */
+function TadlisPanel({ tadlis }: { tadlis: TadlisSummary }) {
+  return (
+    <div className="rounded-xl border border-gray-300 bg-white p-4" dir="rtl">
+      <h2 className="mb-2 text-sm font-bold text-gray-800">
+        تقسيمات التدليس في هذا الإسناد
+      </h2>
+      <div className="space-y-2">
+        <TadlisRow
+          present={tadlis.hasIsnad}
+          label="تدليس الإسناد"
+          definition="إسقاط الشيخ المباشر والرواية عمَّن فوقه بصيغة محتملة («عن» / «قال») للإيهام بسماعه."
+          instances={tadlis.instances.filter((i) => i.type === "isnad")}
+        />
+        <TadlisRow
+          present={tadlis.hasTaswiya}
+          label="تدليس التسوية"
+          definition="إسقاط راوٍ ضعيفٍ بين ثقتين، فيظهر الإسناد كأنّ كلَّ رجاله ثقات. أشدّ أنواع التدليس."
+          instances={tadlis.instances.filter((i) => i.type === "taswiya")}
+        />
+        <TadlisRow
+          present={false}
+          unavailable
+          label="تدليس الشيوخ"
+          definition="تسمية الشيخ بما لا يُعرف به (كنية أو لقب نادر) لإخفاء هويته."
+          instances={[]}
+          unavailableNote={tadlis.shuyukhNote}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TadlisRow({
+  present,
+  label,
+  definition,
+  instances,
+  unavailable,
+  unavailableNote,
+}: {
+  present: boolean;
+  label: string;
+  definition: string;
+  instances: { narratorName: string; reason: string }[];
+  unavailable?: boolean;
+  unavailableNote?: string;
+}) {
+  const tone = unavailable
+    ? "border-gray-200 bg-gray-50"
+    : present
+      ? "border-red-300 bg-red-50"
+      : "border-emerald-200 bg-emerald-50/50";
+  const icon = unavailable ? "—" : present ? "⚠" : "✓";
+  const iconColor = unavailable
+    ? "text-gray-500"
+    : present
+      ? "text-red-700"
+      : "text-emerald-700";
+  const verdictText = unavailable
+    ? "غير متوفِّر"
+    : present
+      ? `وقع في ${instances.length} موضع`
+      : "لم يُكتشف";
+  return (
+    <details className={`rounded-lg border ${tone} p-2`}>
+      <summary className="flex cursor-pointer items-center gap-2 text-sm">
+        <span className={`text-base ${iconColor}`}>{icon}</span>
+        <span className="font-bold text-gray-900">{label}</span>
+        <span className="ms-auto text-xs text-gray-700">{verdictText}</span>
+      </summary>
+      <p className="mt-2 text-xs leading-relaxed text-gray-700">{definition}</p>
+      {present && instances.length > 0 && (
+        <ul className="mt-2 space-y-1 ms-4 list-disc text-xs text-gray-900">
+          {instances.map((inst, i) => (
+            <li key={i}>
+              <span className="font-medium">{inst.narratorName}</span> —{" "}
+              <span className="text-gray-700">{inst.reason}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {unavailable && unavailableNote && (
+        <p className="mt-2 text-[11px] italic text-gray-600">
+          {unavailableNote}
+        </p>
+      )}
+    </details>
   );
 }
 
@@ -122,22 +662,16 @@ function RuleFooter() {
 
 function gradeBadge(grade: string | null): { className: string; label: string } | null {
   if (!grade) return null;
-  if (/sahih|صحيح/i.test(grade))
-    return { className: "bg-green-100 text-green-800", label: grade };
-  if (/hasan|حسن/i.test(grade))
-    return { className: "bg-emerald-100 text-emerald-800", label: grade };
-  if (/da'?i?f|ضعيف/i.test(grade))
-    return { className: "bg-orange-100 text-orange-800", label: grade };
+  // Always render the label in Arabic — the corpus rows store grades as
+  // either "Sahih"/"Hasan"/"Daif" (English) or already-Arabic strings;
+  // normalise to consistent Arabic so users never see English here.
+  if (/sahih/i.test(grade)) return { className: "bg-green-100 text-green-800", label: "صحيح" };
+  if (/hasan/i.test(grade)) return { className: "bg-emerald-100 text-emerald-800", label: "حسن" };
+  if (/da'?i?f/i.test(grade)) return { className: "bg-orange-100 text-orange-800", label: "ضعيف" };
+  if (/صحيح/.test(grade)) return { className: "bg-green-100 text-green-800", label: grade };
+  if (/حسن/.test(grade)) return { className: "bg-emerald-100 text-emerald-800", label: grade };
+  if (/ضعيف/.test(grade)) return { className: "bg-orange-100 text-orange-800", label: grade };
   return { className: "bg-gray-100 text-gray-700", label: grade };
-}
-
-function MatnPanel({ matn }: { matn: string }) {
-  return (
-    <div className="rounded-xl border border-gray-300 bg-white p-4" dir="rtl">
-      <h2 className="mb-2 text-sm font-bold text-gray-800">المتن</h2>
-      <p className="text-lg font-medium leading-relaxed text-gray-900">{matn}</p>
-    </div>
-  );
 }
 
 // Tag for the small inline "our app's verdict" badge per corpus match.
@@ -184,13 +718,7 @@ function AppVerdictTag({
           className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${v.className}`}
           title={state.reason}
         >
-          🧮 {v.label}
-        </span>
-        <span
-          className="cursor-help text-[10px] text-gray-500"
-          title="حكم تطبيقنا على نفس هذا السند، تطبيقاً لقاعدة «أشدّ الجرح» على كل راوٍ."
-        >
-          ⓘ
+          🧮 حكم تطبيقنا على هذا السند: {v.label}
         </span>
       </span>
     );
@@ -201,9 +729,9 @@ function AppVerdictTag({
       type="button"
       onClick={onCompute}
       className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-900 hover:bg-emerald-100"
-      title="انقر لتفحَص التطبيقُ سند هذه الرواية ويُظهر حكمه."
+      title="انقر ليُعيد التطبيق تحليل سند هذه الرواية بقاعدته الخاصة، فترى حكمه إلى جوار حكم صاحب الكتاب"
     >
-      🧮 احسب حكم التطبيق
+      🧮 احسب حكم تطبيقنا على هذا السند
     </button>
   );
 }
@@ -249,57 +777,90 @@ function CorpusMatches({
     }
   }
 
+  // Dedupe by (book, hadith_in_book) — same hadith may appear in multiple
+  // chapters or have near-duplicate rows from the importer; keep best score.
+  const deduped = Array.from(
+    matches
+      .reduce<Map<string, typeof matches[number]>>((acc, m) => {
+        const key = `${m.book_id}#${m.hadith_in_book ?? m.id}`;
+        const prev = acc.get(key);
+        if (!prev || m.score > prev.score) acc.set(key, m);
+        return acc;
+      }, new Map())
+      .values(),
+  ).sort((a, b) => b.score - a.score);
+
   return (
-    <div className="rounded-xl border border-gray-300 bg-white p-4" dir="rtl">
-      <h2 className="mb-2 text-sm font-bold text-gray-800">
-        ورد هذا الحديث في {matches.length} موضع
-      </h2>
+    <section className="card corpus-card" dir="rtl">
+      <div className="section-head">
+        <div>
+          <div className="section-eyebrow">التخريج</div>
+          <h2 className="section-title">
+            مواضع المتن في الكتب الأصول — {deduped.length} مصدراً
+          </h2>
+        </div>
+      </div>
       {chainTooShort && matches.length > 0 && (
-        <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-xs leading-relaxed text-amber-900">
-          <p className="font-bold">
+        <div
+          className="card"
+          style={{
+            marginBottom: 14,
+            padding: 12,
+            background: "var(--amber-bg)",
+            borderColor: "var(--amber-rule)",
+            color: "var(--amber-fg)",
+          }}
+        >
+          <p style={{ margin: 0, fontWeight: 700, fontSize: 13 }}>
             💡 ما لصقتَه يحوي المتن دون السلسلة الكاملة.
           </p>
-          <p className="mt-1">
-            اضغط على «افحص بالسلسلة الكاملة» بجانب أي كتاب أدناه ليُعاد الفحص
+          <p style={{ marginTop: 4, fontSize: 12.5, color: "var(--ink-2)" }}>
+            اضغط على «تدقيق بإسناد هذا الكتاب» بجانب أي كتاب أدناه ليُعاد الفحص
             باستخدام السند المسجَّل في ذلك الكتاب.
           </p>
         </div>
       )}
-      <ul className="space-y-2">
-        {matches.map((m) => {
-          const badge = gradeBadge(m.grade);
-          return (
-            <li key={m.id} className="rounded-lg border border-gray-200">
-              <details open={chainTooShort && matches[0].id === m.id}>
-                <summary className="flex cursor-pointer flex-wrap items-center gap-2 p-2 hover:bg-gray-50">
-                  <span className="font-bold text-gray-900">
-                    {m.book_name_ar}
-                  </span>
-                  {m.hadith_in_book && (
-                    <span className="text-sm font-medium text-gray-700">
-                      رقم {m.hadith_in_book}
+      <table className="corpus-table">
+        <colgroup>
+          <col />
+          <col style={{ width: "90px" }} />
+          <col style={{ width: "180px" }} />
+          <col style={{ width: "180px" }} />
+          <col style={{ width: "180px" }} />
+          <col style={{ width: "auto" }} />
+        </colgroup>
+        <thead>
+          <tr className="corpus-head">
+            <th>الكتاب</th>
+            <th>رقم الحديث</th>
+            <th>حكم صاحب الكتاب</th>
+            <th>حكم تطبيقنا</th>
+            <th>تشابه المتن</th>
+            <th className="sr-only">إعادة التدقيق</th>
+          </tr>
+        </thead>
+        <tbody>
+          {deduped.map((m) => {
+            const badge = gradeBadge(m.grade);
+            return (
+              <tr key={m.id}>
+                <td className="corpus-book">{m.book_name_ar}</td>
+                <td className="corpus-num mono">
+                  {m.hadith_in_book ?? "—"}
+                </td>
+                <td>
+                  {badge ? (
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs font-medium ${badge.className}`}
+                      title="حكم مصنِّف الكتاب أو محقِّقه على هذه الرواية"
+                    >
+                      {badge.label}
                     </span>
+                  ) : (
+                    <span style={{ color: "var(--ink-3)" }}>—</span>
                   )}
-                  {badge && (
-                    <span className="inline-flex items-center gap-1">
-                      <span
-                        className={`rounded px-2 py-0.5 text-xs font-medium ${badge.className}`}
-                      >
-                        {badge.label}
-                      </span>
-                      <span
-                        className="cursor-help rounded border border-gray-300 bg-gray-50 px-1 py-0.5 text-[10px] font-medium text-gray-700"
-                        title={
-                          "هذا حكم المصنِّف أو المحقِّق على هذه الرواية في هذا الكتاب — " +
-                          "وليس حكم تطبيقنا. مثال: صحيح البخاري ومسلم ⇐ حكم المؤلِّف ذاته بإدخاله في صحيحه. " +
-                          "السنن والمسانيد ⇐ في الغالب حكم محقِّقٍ متأخّر (كالألباني أو شعيب الأرنؤوط)."
-                        }
-                      >
-                        📖 حكم الكتاب
-                      </span>
-                    </span>
-                  )}
-                  {/* App verdict — lazily computed per match. Shows the comparison the user asked for. */}
+                </td>
+                <td>
                   <AppVerdictTag
                     state={appVerdicts[m.id]}
                     onCompute={(e) => {
@@ -307,33 +868,34 @@ function CorpusMatches({
                       computeAppVerdict(m);
                     }}
                   />
-                  <span className="ms-auto text-xs font-medium text-gray-700">
-                    {Math.round(m.score * 100)}٪
-                  </span>
-                </summary>
-                <div className="border-t border-gray-200 bg-gray-50">
-                  <p className="p-3 text-sm leading-relaxed text-gray-900">
-                    {m.arabic_full}
-                  </p>
-                  <div className="flex justify-end border-t border-gray-200 p-2">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        onAuditFullChain(m.arabic_full);
-                      }}
-                      className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-800"
-                    >
-                      ⟲ افحص بالسلسلة الكاملة من {m.book_name_ar}
-                    </button>
+                </td>
+                <td className="corpus-sim">
+                  <div className="sim-wrap">
+                    <span className="sim-num mono">{Math.round(m.score * 100)}٪</span>
+                    <span className="sim-bar" aria-hidden="true">
+                      <span className="sim-fill" style={{ width: `${Math.round(m.score * 100)}%` }} />
+                    </span>
                   </div>
-                </div>
-              </details>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="reaudit-btn"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onAuditFullChain(m.arabic_full);
+                    }}
+                    title={`إعادة التدقيق باستخدام إسناد ${m.book_name_ar}`}
+                  >
+                    تدقيق بإسناد هذا الكتاب
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
   );
 }
 
@@ -376,60 +938,208 @@ export default function HomePage() {
   const hasContent =
     result && (result.narrators.length > 0 || result.corpus_matches.length > 0 || result.matn);
 
+  // Editor expansion — start expanded if no result, collapse once we have one
+  // (per verified UX practice: prompt input stays live but de-emphasised when
+  // results take focus).
+  const [editorOpen, setEditorOpen] = useState(true);
+  if (result && editorOpen && !loading) {
+    // Collapse the moment we render a result for the first time.
+    setEditorOpen(false);
+  }
+
   return (
-    <main dir="rtl" className="mx-auto w-full max-w-3xl px-4 py-8">
-      <h1 className="text-2xl font-bold text-gray-900">مدقّق الإسناد</h1>
-      <p className="mt-1 text-sm text-gray-700">
-        الصق الحديث كاملًا (المتن والإسناد) — سيتعرّف التطبيق على كل راوٍ،
-        ويعرض حكم العلماء عليه، ويبحث عن المتن في الكتب التسعة.
-      </p>
+    <main dir="rtl" className="page">
+      {/* ─── Header ─── */}
+      <header className="app-header">
+        <div className="brand">
+          <div className="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <path d="M6 4v16M18 4v16M6 12h12" />
+            </svg>
+          </div>
+          <div>
+            <div className="brand-name">إسناد</div>
+            <div className="brand-tagline">تدقيقٌ آليٌّ لسلاسل رواة الحديث</div>
+          </div>
+        </div>
+        <div className="header-meta">
+          {result && (
+            <span className="meta-chip">
+              تمّ التدقيق عبر <b>{result.narrators.length}</b> راوٍ
+            </span>
+          )}
+        </div>
+      </header>
 
-      <textarea
-        dir="rtl"
-        value={isnad}
-        onChange={(e) => setIsnad(e.target.value)}
-        placeholder="… الصق الحديث هنا"
-        rows={5}
-        className="mt-4 w-full rounded-lg border border-gray-300 p-3 text-lg"
-      />
+      {/* ─── Input block (always present; collapsible after first audit) ─── */}
+      <section className="card input-card">
+        <div className="section-head">
+          <div>
+            <div className="section-eyebrow">المُدْخَل</div>
+            <h2 className="section-title">
+              {result ? "نصّ الإسناد المُدرَج" : "ألصق الحديث (المتن والإسناد)"}
+            </h2>
+          </div>
+          {result && (
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => setEditorOpen((o) => !o)}
+              aria-expanded={editorOpen}
+            >
+              {editorOpen ? "إخفاء المحرِّر" : "تعديل النص"}
+            </button>
+          )}
+        </div>
 
-      <div className="mt-2 flex gap-2">
-        <button
-          type="button"
-          onClick={() => audit()}
-          disabled={loading || isnad.trim().length === 0}
-          className="rounded-lg bg-emerald-700 px-4 py-2 text-white disabled:opacity-40"
-          suppressHydrationWarning
-        >
-          {loading ? "…جارٍ الفحص" : "افحص الحديث"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setIsnad(EXAMPLE)}
-          className="rounded-lg border border-gray-300 px-4 py-2"
-        >
-          مثال
-        </button>
-      </div>
+        {editorOpen ? (
+          <div className="isnad-editor">
+            <textarea
+              dir="rtl"
+              className="isnad-textarea"
+              value={isnad}
+              onChange={(e) => setIsnad(e.target.value)}
+              placeholder="… ألصق إسناد الحديث هنا"
+              suppressHydrationWarning
+            />
+            <div className="isnad-editor-actions">
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={() => audit()}
+                disabled={loading || isnad.trim().length === 0}
+                suppressHydrationWarning
+              >
+                {loading ? "… جارٍ الفحص" : result ? "⟲ إعادة التدقيق" : "افحص الحديث"}
+              </button>
+              {!result && (
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setIsnad(EXAMPLE)}
+                >
+                  مثال
+                </button>
+              )}
+              {result && (
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => setEditorOpen(false)}
+                >
+                  إلغاء
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="isnad-raw" dir="rtl">{isnad}</div>
+            <div className="input-meta">
+              <span>تمّ استخراج <b>{result?.narrators.length ?? 0} رواة</b> + المتن</span>
+              {result?.nisbah && (
+                <>
+                  <span className="dot" aria-hidden="true">•</span>
+                  <span>{result.nisbah.label}</span>
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </section>
 
       {error && (
-        <div className="mt-4 rounded-lg border border-red-300 bg-red-50 p-3 text-red-800">
+        <div
+          className="card"
+          style={{ borderColor: "var(--red-rule)", background: "var(--red-bg)", color: "var(--red-fg)" }}
+        >
           {error}
         </div>
       )}
 
-      {loading && <p className="mt-6 text-gray-500">…جارٍ تحليل الحديث</p>}
-
       {result && (
-        <section className="mt-8 space-y-4">
+        <>
           {!hasContent && (
-            <p className="text-gray-600">لم يُعثر على إسناد أو حديث.</p>
+            <div className="card" style={{ color: "var(--ink-2)" }}>
+              لم يُعثر على إسناد أو حديث.
+            </div>
           )}
 
-          {/* Matn */}
-          {result.matn && <MatnPanel matn={result.matn} />}
+          {/* ─── Matn (large Amiri, manuscript brackets) ─── */}
+          {result.matn && (
+            <section className="card matn-card">
+              <div className="section-head">
+                <div>
+                  <div className="section-eyebrow">المتن المستخرَج</div>
+                  <h2 className="section-title">نصّ الحديث</h2>
+                </div>
+              </div>
+              <blockquote className="matn">
+                <span className="matn-bracket" aria-hidden="true">﴿</span>
+                <p>{result.matn}</p>
+                <span className="matn-bracket" aria-hidden="true">﴾</span>
+              </blockquote>
+            </section>
+          )}
 
-          {/* Corpus matches — flag chain-too-short so user can re-audit using a book's full chain. */}
+          {/* ─── Two-tier verdict ─── */}
+          {hasChain && (
+            <section className="card">
+              <div className="section-head">
+                <div>
+                  <div className="section-eyebrow">الحكم</div>
+                  <h2 className="section-title">حكم الإسناد + حكم المتن</h2>
+                </div>
+              </div>
+              <div className="verdict-grid">
+                {/* Tier A — this specific chain */}
+                <div className="verdict-tier verdict-tier-a">
+                  <span className="tier-rail" aria-hidden="true" />
+                  <div className="tier-scope">حكم الإسناد وحده</div>
+                  <div className="tier-headline">
+                    {result.rank && <RankBadge rank={result.rank} />}
+                    {result.acceptance && <AcceptanceBadge acceptance={result.acceptance} />}
+                    {result.saqt && <SaqtBadge saqt={result.saqt} />}
+                  </div>
+                  <ul className="tier-reasons">
+                    <li>{result.chain_reason}</li>
+                    {result.rank && result.rank.reason !== result.chain_reason && (
+                      <li>{result.rank.reason}</li>
+                    )}
+                    {result.acceptance && (
+                      <li>{result.acceptance.reason}</li>
+                    )}
+                    {result.saqt && result.saqt.type !== "none" && (
+                      <li>{result.saqt.reason}</li>
+                    )}
+                  </ul>
+                </div>
+
+                {/* Tier B — the whole hadith across all known chains */}
+                <div className="verdict-tier verdict-tier-b">
+                  <span className="tier-rail" aria-hidden="true" />
+                  <div className="tier-scope">حكم الحديث في مجموع طرقه</div>
+                  <div className="tier-headline">
+                    {result.nisbah && <NisbahBadge nisbah={result.nisbah} />}
+                    {result.number && <NumberBadge number={result.number} />}
+                  </div>
+                  <ul className="tier-reasons">
+                    {result.nisbah && <li>{result.nisbah.reason}</li>}
+                    {result.number && <li>{result.number.reason}</li>}
+                    <li>
+                      الحكمان لا يتناقضان: الأوّل عن <strong>قوّة سلسلتك</strong>،
+                      والثاني عن <strong>انتشار المتن</strong> في كتبنا.
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* ─── Share box: copy-paste for X ─── */}
+          {hasChain && <ShareBox result={result} />}
+
+          {/* ─── Corpus matches ─── */}
           {result.corpus_matches.length > 0 && (
             <CorpusMatches
               matches={result.corpus_matches}
@@ -438,38 +1148,92 @@ export default function HomePage() {
             />
           )}
 
-          {/* Isnād verdict + diagram */}
+          {/* ─── Chain diagram ─── */}
           {hasChain && (
-            <>
-              {(() => {
-                const v = VERDICT_STYLE[result.chain_verdict];
-                return (
-                  <div className={`rounded-xl border ${v.bg} ${v.text} p-4`}>
-                    <div className="flex items-center gap-2 text-lg font-bold">
-                      <span aria-hidden>{v.symbol}</span>
-                      <span>{v.label}</span>
-                      {result.nisbah && (
-                        <NisbahBadge nisbah={result.nisbah} />
-                      )}
-                    </div>
-                    <p className="mt-1 text-sm">{result.chain_reason}</p>
-                  </div>
-                );
-              })()}
-              <RuleFooter />
-
-              <div className="rounded-xl border border-gray-300 bg-white p-4">
-                <h2 className="mb-2 text-sm font-semibold text-gray-600">
-                  السلسلة
-                </h2>
-                <IsnadDiagram
-                  narrators={result.narrators}
-                  links={result.links}
-                />
+            <section className="card chain-card">
+              <div className="section-head">
+                <div>
+                  <div className="section-eyebrow">سلسلة الإسناد</div>
+                  <h2 className="section-title">
+                    السند مرتّباً — النبيُّ ﷺ في الأعلى، شيخ المُخرِّج في الأسفل
+                  </h2>
+                </div>
+                <div className="chain-legend">
+                  <span><span className="lg-dot lg-strong" /> ثقة فما فوق</span>
+                  <span><span className="lg-dot lg-good" /> صدوق</span>
+                  <span><span className="lg-dot lg-weak" /> ضعيف / لين</span>
+                  <span><span className="lg-dot lg-rejected" /> مردود</span>
+                </div>
               </div>
-            </>
+              {result.itibar_note && (
+                <p className="itibar-note">{result.itibar_note}</p>
+              )}
+              <IsnadDiagram
+                narrators={result.narrators}
+                links={result.links}
+                branches={result.has_multiple_branches ? result.branches : undefined}
+              />
+            </section>
           )}
-        </section>
+
+          {/* ─── Analytical detail accordions — one per topic ─── */}
+          {hasChain && (
+            <div className="acc-stack">
+              {result.tadlis && (
+                <section className="card acc-card">
+                  <details>
+                    <summary className="acc-head" style={{ listStyle: "none" }}>
+                      <div>
+                        <div className="section-eyebrow">الفصل</div>
+                        <span style={{ fontFamily: "var(--f-display)", fontSize: 22, fontWeight: 700 }}>
+                          تحليل التدليس في هذا الإسناد
+                        </span>
+                      </div>
+                      <span aria-hidden style={{ color: "var(--ink-3)", fontSize: 18 }}>▾</span>
+                    </summary>
+                    <div className="acc-body">
+                      <TadlisPanel tadlis={result.tadlis} />
+                    </div>
+                  </details>
+                </section>
+              )}
+              {result.tanByNarrator && result.tanByNarrator.length > 0 && (
+                <section className="card acc-card">
+                  <details>
+                    <summary className="acc-head" style={{ listStyle: "none" }}>
+                      <div>
+                        <div className="section-eyebrow">الفصل</div>
+                        <span style={{ fontFamily: "var(--f-display)", fontSize: 22, fontWeight: 700 }}>
+                          أسباب الطعن — مَن جُرِح ولِمَ
+                        </span>
+                      </div>
+                      <span aria-hidden style={{ color: "var(--ink-3)", fontSize: 18 }}>▾</span>
+                    </summary>
+                    <div className="acc-body">
+                      <TanPanel narrators={result.narrators} tan={result.tanByNarrator} />
+                    </div>
+                  </details>
+                </section>
+              )}
+              <section className="card acc-card">
+                <details>
+                  <summary className="acc-head" style={{ listStyle: "none" }}>
+                    <div>
+                      <div className="section-eyebrow">منهجيّة العمل</div>
+                      <span style={{ fontFamily: "var(--f-display)", fontSize: 22, fontWeight: 700 }}>
+                        منهج التخريج والحُكْم
+                      </span>
+                    </div>
+                    <span aria-hidden style={{ color: "var(--ink-3)", fontSize: 18 }}>▾</span>
+                  </summary>
+                  <div className="acc-body">
+                    <RuleFooter />
+                  </div>
+                </details>
+              </section>
+            </div>
+          )}
+        </>
       )}
     </main>
   );

@@ -43,33 +43,37 @@ export interface NarratorDetail {
   studentIds: number[];
 }
 
-function computeDisagreement(grades: SourceGrade[]): DisagreementSummary {
+function computeDisagreement(
+  grades: SourceGrade[],
+  opts: { isCompanion?: boolean } = {},
+): DisagreementSummary {
   // Classical principle: «الصحابة كلّهم عدول». Companions are not subject to
-  // jarh. If ANY source marks this narrator as a Companion, treat «ضعيف /
-  // متروك / كذاب» grades as parser artifacts (Itqan's automated parser of
-  // al-Iṣāba, al-Siyar, and al-Tadhkira sometimes misclassifies contextual
-  // mentions of «ضعيف» / «لين» as gradings of the narrator himself).
-  const isCompanion = grades.some(
-    (g) =>
-      g.grade_en === "companion" ||
-      (g.grade_ar && /صحاب|صحبة|له\s+صحبة|أدرك\s+النبي/.test(g.grade_ar)),
-  );
+  // jarh. Either the caller passed `isCompanion` (preferred — uses narrator
+  // tabaqat which is the canonical signal), or we infer from the grades.
+  const isCompanion =
+    opts.isCompanion ??
+    grades.some(
+      (g) =>
+        g.grade_en === "companion" ||
+        (g.grade_ar && /صحاب|صحبة|له\s+صحبة|أدرك\s+النبي/.test(g.grade_ar)),
+    );
+
+  // User policy: surface the harshest jarh available. We do NOT suppress
+  // weak/abandoned/fabricator rows for trust-list narrators — if the DB
+  // has the grade, we show it.
 
   // Only consider rows with a real, opinionated grade — exclude:
   //   - null / "unknown" grade_en (book mentions but doesn't grade)
   //   - citation-only grade_ar like «ذكره ابن حجر في الإصابة»
-  //   - for Companions: anything in the jarh tiers (parser noise)
+  //   - for Companions: jarh tiers (parser noise — Companions are عدول)
   const graded = grades.filter((g) => {
     if (!g.grade_en || g.grade_en === "unknown") return false;
     if (isMentionOnly(g.grade_ar)) return false;
-    if (
-      isCompanion &&
-      (g.grade_en === "weak" ||
-        g.grade_en === "abandoned" ||
-        g.grade_en === "fabricator")
-    ) {
-      return false;
-    }
+    const isJarhTier =
+      g.grade_en === "weak" ||
+      g.grade_en === "abandoned" ||
+      g.grade_en === "fabricator";
+    if (isCompanion && isJarhTier) return false;
     return true;
   });
 
@@ -143,7 +147,9 @@ export async function getNarrator(id: number): Promise<NarratorDetail | null> {
   const sortedSourceGrades = [...sourceGrades].sort(
     (a, b) => gradeTier(b.grade_en) - gradeTier(a.grade_en),
   );
-  const disagreement = computeDisagreement(sourceGrades);
+  const tabaqat = base.rows[0].tabaqat ?? "";
+  const isCompanion = /صحاب|العشرة/.test(tabaqat);
+  const disagreement = computeDisagreement(sourceGrades, { isCompanion });
 
   return {
     ...base.rows[0],

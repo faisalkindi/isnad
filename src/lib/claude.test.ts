@@ -11,6 +11,12 @@ vi.mock("@anthropic-ai/sdk", () => ({
   },
 }));
 
+// Also stub global fetch — `callLLM` now routes through OpenRouter or
+// DeepSeek when those providers are configured, both of which use fetch.
+// Force the test to use the Anthropic path by clearing those env vars.
+delete process.env.LLM_PROVIDER;
+delete process.env.LLM_MODEL;
+
 import { callClaude, withinBudget, BudgetExceededError } from "./claude";
 import { query, pool } from "./db";
 

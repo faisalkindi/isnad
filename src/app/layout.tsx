@@ -1,17 +1,30 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Amiri, Noto_Naskh_Arabic } from "next/font/google";
 import "./globals.css";
 import { LimitsBanner } from "@/components/LimitsBanner";
 import { SiteFooter } from "@/components/SiteFooter";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+// Body / UI font — Noto Naskh Arabic is the workhorse for Arabic UI text.
+const notoNaskh = Noto_Naskh_Arabic({
+  variable: "--font-naskh",
+  subsets: ["arabic"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+// Display + matn — Amiri is the classical naskh choice for hadith literature.
+const amiri = Amiri({
+  variable: "--font-amiri",
+  subsets: ["arabic"],
+  weight: ["400", "700"],
+  display: "swap",
+});
+
+// Mono — for numerals (matches the prototype's JetBrains Mono role).
+const mono = Geist_Mono({
+  variable: "--font-mono",
   subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -66,10 +79,10 @@ export default function RootLayout({
       lang="ar"
       dir="rtl"
       translate="no"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${notoNaskh.variable} ${amiri.variable} ${mono.variable} h-full antialiased`}
     >
       <body
-        className="flex min-h-full flex-col bg-gray-50"
+        className="isnad-body flex min-h-full flex-col"
         suppressHydrationWarning
       >
         <LimitsBanner />

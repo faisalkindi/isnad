@@ -13,7 +13,20 @@ import type { MatchResult } from "./matcher";
 //   v6 — segmenter preserves disambiguating attrs (مولى X, الأنصاري, الكوفي…)
 //   v7 — nisbah classification (مرفوع/موقوف/مقطوع/قدسي); Prophet appended only
 //        when actually raised to him; verdict reason reflects ascription
-const CACHE_VERSION = "v7";
+//   v8 — chain-level tadlīs types (تدليس الإسناد / تدليس التسوية) detected
+//        from chain narrators + formula
+//   v9  — number-class, saqṭ type, refined rank, maqbūl/mardūd, asbāb al-ṭaʿn
+//   v10 — number-class now uses the CLASSICAL rule (per-طبقة distinct-student
+//         counts via our transmission graph), not corpus match counts
+//   v11 — multi-branch isnād support (BranchResult[] + iʿtibār note) for
+//         «ح» / «وعن X» pivot-forks; segmenter returns branches[].
+//   v12 — attestation evidence on links: source_books[], documented_non_meeting,
+//         attestation_verb (samaa/liqa/idraka/rawa/kataba).
+//   v13 — invalidate v12 cache entries computed before al-Tarikh al-Kabir
+//         ingestion completed (7,594 attestation_verb rows now loaded).
+//   v14 — book key → Arabic title mapping now uses canonical lib/sources;
+//         Prophet→Companion link rendered as clean ṣuḥba note.
+const CACHE_VERSION = "v14";
 
 /** Stable cache key for a pasted isnād. Includes a policy version so that
  *  shape/verdict changes auto-invalidate without manual cache wipes. */

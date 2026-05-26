@@ -213,6 +213,49 @@ const META: Record<string, SourceBookMeta> = {
     orientation: "qurra",
     noteAr: "تراجم القرّاء — ذكر الراوي فيه يفيد إمامته في القراءات لا في الحديث بالضرورة.",
   },
+  // Books imported as explicit-quote verdicts into narrator_grade_source
+  daraqutni_mawsuah: {
+    key: "daraqutni_mawsuah",
+    titleAr: "موسوعة أقوال الدارقطني في رجال الحديث وعلله",
+    authorAr: "الدارقطني (جمع: محمد مهدي المسلمي وآخرون)",
+    authorDeath: "385 هـ",
+    orientation: "jarh_leaning",
+    noteAr: "موسوعة جامعة لأقوال الإمام الدارقطني في الرجال والعلل من 11 مصدرًا.",
+  },
+  ibn_hibban_majruhin: {
+    key: "ibn_hibban_majruhin",
+    titleAr: "المجروحين من المحدّثين",
+    authorAr: "ابن حبّان البستي",
+    authorDeath: "354 هـ",
+    orientation: "jarh_leaning",
+    noteAr: "خاصّ بالضعفاء والمجروحين؛ ذكر الراوي فيه قرينة جرحٍ غالبًا.",
+  },
+  ijli_thiqat: {
+    key: "ijli_thiqat",
+    titleAr: "معرفة الثقات",
+    authorAr: "العجلي",
+    authorDeath: "261 هـ",
+    orientation: "tadil_leaning",
+    noteAr: "كتاب تعديل قديم؛ يُعدّ من الأئمة المتشددين نسبيًّا، فإدراج الراوي فيه قرينة توثيق.",
+  },
+  // Phase 3 attestation source: verb-level proofs of سماع/لقاء etc.
+  tarikh_kabir: {
+    key: "tarikh_kabir",
+    titleAr: "التاريخ الكبير",
+    authorAr: "الإمام البخاري",
+    authorDeath: "256 هـ",
+    orientation: "comprehensive",
+    noteAr: "كتاب البخاري في تراجم الرواة، يُسجّل صراحةً سماع الراوي ولقاءه وما رواه — أعلى درجات إثبات الاتصال.",
+  },
+  // Phase 2 source: documented non-meetings (overrides chronology).
+  marasil_ibn_abi_hatim: {
+    key: "marasil_ibn_abi_hatim",
+    titleAr: "المراسيل",
+    authorAr: "ابن أبي حاتم الرازي",
+    authorDeath: "327 هـ",
+    orientation: "jarh_leaning",
+    noteAr: "كتابٌ مخصَّصٌ لجمع المراسيل وما لم يَسمَع فيه الراوي من شيخه؛ إثباتُ عدم اللقاء.",
+  },
 };
 
 const ORIENTATION_LABEL_AR: Record<BookOrientation, string> = {
@@ -236,3 +279,24 @@ export function sourceBookMeta(key: string): SourceBookMeta | null {
 export function orientationLabel(o: BookOrientation): string {
   return ORIENTATION_LABEL_AR[o];
 }
+
+/** The canonical ordered list of rijāl source-book keys for which we expose
+ *  a verdict slot in the narrator card. Order is: explicit-quote works
+ *  (Dāraquṭnī's موسوعة) first, then the 22 Itqan source_grade books +
+ *  newly imported ones, sorted by orientation then author death year so
+ *  the UI is consistent across every narrator. Books WITHOUT a verdict
+ *  for a given narrator display "—" so the user can scan a stable layout. */
+export const ALL_RIJAL_BOOKS: readonly SourceBookMeta[] = [
+  // Explicit-quote sources (narrator_grade_source)
+  ...["daraqutni_mawsuah", "ibn_hibban_majruhin", "ijli_thiqat"]
+    .map((k) => META[k])
+    .filter((m): m is SourceBookMeta => Boolean(m)),
+  // Itqan source_grade books, sorted by orientation then author death year
+  ...Object.values(META)
+    .filter((m) => !["daraqutni_mawsuah", "ibn_hibban_majruhin", "ijli_thiqat"].includes(m.key))
+    .sort((a, b) => {
+      const ad = parseInt(a.authorDeath, 10) || 9999;
+      const bd = parseInt(b.authorDeath, 10) || 9999;
+      return ad - bd;
+    }),
+];
