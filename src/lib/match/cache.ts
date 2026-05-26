@@ -33,7 +33,10 @@ import type { MatchResult } from "./matcher";
 //         level-summary digits.
 //   v17 — matn-only inputs (no isnād) no longer throw; return corpus matches
 //         + needs_review verdict so user can re-audit using a book's chain.
-const CACHE_VERSION = "v17";
+//   v18 — accordion content rewritten to prototype's narrative style:
+//         TadlisPanel uses mudallis-tier prose + samaa-confirmation,
+//         RuleFooter replaced with numbered methodology list.
+const CACHE_VERSION = "v18";
 
 /** Stable cache key for a pasted isnād. Includes a policy version so that
  *  shape/verdict changes auto-invalidate without manual cache wipes. */

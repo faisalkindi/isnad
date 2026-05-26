@@ -686,8 +686,26 @@
 
 /* Methodology numbered list */
 .method-list { margin: 0 0 12px; padding-inline-start: 22px; }
-.method-list li { padding: 4px 0; font-size: 14.5px; line-height: 1.7; }
-.method-foot { font-size: 12.5px; color: var(--ink-3); margin: 6px 0 0; }
+.method-list li { padding: 4px 0; font-size: 14.5px; line-height: 1.85; color: var(--ink-1); }
+.method-foot { font-size: 12.5px; color: var(--ink-3); margin: 6px 0 0; line-height: 1.7; }
+
+/* Bullet list used inside tadlīs/methodology narrative panels */
+.bullet-list { list-style: none; padding-inline-start: 4px; margin: 8px 0 0; }
+.bullet-list li {
+  padding: 4px 0 4px 16px;
+  font-size: 14px;
+  line-height: 1.85;
+  color: var(--ink-1);
+  position: relative;
+}
+.bullet-list li::before {
+  content: "◆";
+  color: var(--ink-3);
+  font-size: 10px;
+  position: absolute;
+  inset-inline-start: -4px;
+  top: 8px;
+}
 
 /* ═══════════════════ Footer ═══════════════════ */
 .app-footer {

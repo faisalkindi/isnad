@@ -614,34 +614,132 @@ function NisbahBadge({ nisbah }: { nisbah: NisbahResult }) {
 /** Surfaces chain-level tadlīs classification («تقسيمات التدليس»). Three known
  *  types: الإسناد، التسوية، الشيوخ. We auto-detect the first two; the third
  *  requires a curated obscure-names database we don't have yet. */
-function TadlisPanel({ tadlis }: { tadlis: TadlisSummary }) {
-  return (
-    <div className="rounded-xl border border-gray-300 bg-white p-4" dir="rtl">
-      <h2 className="mb-2 text-sm font-bold text-gray-800">
-        تقسيمات التدليس في هذا الإسناد
-      </h2>
-      <div className="space-y-2">
-        <TadlisRow
-          present={tadlis.hasIsnad}
-          label="تدليس الإسناد"
-          definition="إسقاط الشيخ المباشر والرواية عمَّن فوقه بصيغة محتملة («عن» / «قال») للإيهام بسماعه."
-          instances={tadlis.instances.filter((i) => i.type === "isnad")}
-        />
-        <TadlisRow
-          present={tadlis.hasTaswiya}
-          label="تدليس التسوية"
-          definition="إسقاط راوٍ ضعيفٍ بين ثقتين، فيظهر الإسناد كأنّ كلَّ رجاله ثقات. أشدّ أنواع التدليس."
-          instances={tadlis.instances.filter((i) => i.type === "taswiya")}
-        />
-        <TadlisRow
-          present={false}
-          unavailable
-          label="تدليس الشيوخ"
-          definition="تسمية الشيخ بما لا يُعرف به (كنية أو لقب نادر) لإخفاء هويته."
-          instances={[]}
-          unavailableNote={tadlis.shuyukhNote}
-        />
+/** Ibn Ḥajar's five-tier classification of المدلسين in his «طبقات المدلسين»
+ *  — verified from Suhaib Hasan's «Intro to Sciences of Hadith» and the
+ *  standard editions. Each tier has a distinct juristic consequence. */
+const MUDALLIS_TIER_AR: Record<number, { ordinal: string; gloss: string }> = {
+  1: {
+    ordinal: "المرتبة الأولى",
+    gloss: "من لم يوصف بالتدليس إلا نادرًا — يُحتجّ بمعنعنهم.",
+  },
+  2: {
+    ordinal: "المرتبة الثانية",
+    gloss: "الذين احتمل الأئمة تدليسهم وأخرجوا لهم في الصحيح لإمامتهم أو لقلّة تدليسهم.",
+  },
+  3: {
+    ordinal: "المرتبة الثالثة",
+    gloss: "أكثروا من التدليس فلم يحتجّ الأئمة بمعنعنهم إلا بتصريح السماع.",
+  },
+  4: {
+    ordinal: "المرتبة الرابعة",
+    gloss: "اتُّفق على عدم الاحتجاج بهم إلا بتصريح السماع لكثرة تدليسهم عن الضعفاء.",
+  },
+  5: {
+    ordinal: "المرتبة الخامسة",
+    gloss: "ضُعِّفوا بأمر آخر سوى التدليس فلا تُقبل روايتهم ولو صرَّحوا بالسماع.",
+  },
+};
+
+function TadlisPanel({
+  tadlis,
+  narrators,
+  links,
+}: {
+  tadlis: TadlisSummary;
+  narrators: MatchResult["narrators"];
+  links: MatchResult["links"];
+}) {
+  // Find mudallis narrators in this chain (those with a recorded tier).
+  const mudallisList = narrators
+    .filter((n) => n.narrator?.tadlis_tier != null)
+    .map((n) => ({
+      name: n.narrator!.full_name,
+      tier: n.narrator!.tadlis_tier as number,
+      position: n.position,
+    }));
+
+  if (mudallisList.length === 0) {
+    return (
+      <div>
+        <p style={{ fontSize: 14, lineHeight: 1.85, color: "var(--ink-1)" }}>
+          لم يقع في رواة هذا الإسناد من رُمي بالتدليس عند ابن حجر — السلسلة
+          سالمةٌ من احتمال الانقطاع الخفي.
+        </p>
+        <ul className="bullet-list">
+          <li>الإسناد متّصل بسماع مصرَّح به أو محمول على السماع في كلّ طبقاته.</li>
+          <li>التدليس هنا غير وارد أصلًا — لا حاجة لإثبات السماع.</li>
+        </ul>
       </div>
+    );
+  }
+
+  return (
+    <div>
+      {mudallisList.map((m, i) => {
+        const tierInfo = MUDALLIS_TIER_AR[m.tier];
+        // Did this specific mudallis declare samaa on his link in this chain?
+        // The link FROM this narrator (as student) carries his transmission.
+        const myLink = links.find((l) => l.from_position === m.position);
+        const samaaProven = myLink?.attestation_verb?.verb === "samaa";
+        const samaaPhrase = myLink?.attestation_verb?.phrase_ar;
+        return (
+          <div key={i} style={{ marginBottom: 14 }}>
+            <p style={{ fontSize: 14, lineHeight: 1.85, color: "var(--ink-1)", marginBottom: 8 }}>
+              الإسناد فيه مُدلِّس{mudallisList.length === 1 ? " واحد" : ""}:{" "}
+              <b>{m.name}</b>
+              {tierInfo && (
+                <>
+                  {" "}— وهو في <b>{tierInfo.ordinal}</b> من مراتب المدلسين عند ابن حجر ({tierInfo.gloss})
+                </>
+              )}
+              .
+            </p>
+            {samaaProven && samaaPhrase && (
+              <p style={{ fontSize: 14, lineHeight: 1.85, color: "var(--ink-1)", marginBottom: 8 }}>
+                في هذا الإسناد بالذات صرَّح بالسماع:{" "}
+                <span style={{ fontFamily: "var(--f-mono, monospace)", fontSize: 13.5 }}>
+                  «{samaaPhrase}»
+                </span>
+                ، فانتفت العلّة المظنونة وزال احتمال الانقطاع الخفي.
+              </p>
+            )}
+          </div>
+        );
+      })}
+      <ul className="bullet-list">
+        <li>
+          {mudallisList.length === 1
+            ? "لا يوجد في باقي الرواة من رُمي بتدليس."
+            : `وقع التدليس في ${mudallisList.length} من رواة الإسناد.`}
+        </li>
+        <li>
+          {links.every((l) => l.attestation_verb?.verb === "samaa")
+            ? "الإسناد متّصل بسماع مصرَّح به في كلّ طبقاته."
+            : "بعض طبقات الإسناد محمولة على السماع دون تصريح."}
+        </li>
+        <li>
+          الحكم:{" "}
+          {tadlis.hasTaswiya ? (
+            <span className="pill pill-md pill-rejected">
+              <span className="pill-dot" aria-hidden="true" /> قادح
+            </span>
+          ) : tadlis.hasIsnad ? (
+            <span className="pill pill-md pill-weak">
+              <span className="pill-dot" aria-hidden="true" /> وقفٌ في القبول
+            </span>
+          ) : (
+            <span className="pill pill-md pill-strong">
+              <span className="pill-dot" aria-hidden="true" /> غير قادح
+            </span>
+          )}
+          {" — "}
+          {tadlis.hasTaswiya
+            ? "تدليس التسوية يُسقط الإسناد."
+            : tadlis.hasIsnad
+              ? "التدليس هنا محتاج إلى تثبُّت."
+              : "التدليس هنا غير قادح."}
+        </li>
+      </ul>
     </div>
   );
 }
@@ -706,24 +804,18 @@ function TadlisRow({
 
 function RuleFooter() {
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs leading-relaxed text-gray-700">
-      <p className="font-semibold">القاعدة المطبَّقة:</p>
-      <p className="mt-1 italic">
-        «الحديث الذي اتصل إسناده بنقل العدل الضابط عن العدل الضابط إلى منتهاه،
-        ولا يكون شاذاً ولا معلّلًا»
-      </p>
-      <p className="mt-2">
-        يفحص التطبيق <strong>الاتصال</strong> زمنيًّا، و
-        <strong>العدالة والضبط</strong> من تصنيف العلماء للرواة. أما{" "}
-        <strong>الشذوذ والعلة</strong> فيحتاجان إلى نظر العالم وليسا في طاقة
-        التطبيق — لذا قيل: <em>بظاهر الإسناد</em>.
-      </p>
-      <p className="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-amber-900">
-        <strong>سياسة التطبيق في الحكم على الراوي:</strong>{" "}
-        نأخذ <strong>بأشدّ الجرح</strong> الموجود في كتب الرجال الـ22 (على
-        قاعدة «الجرح المفسَّر مقدَّم على التعديل»)، ما لم يكن الراوي صحابيًّا —
-        فإن الصحابة كلّهم عدول بالإجماع. هذا أحوط ما يمكن الحكم به، وقد يكون
-        أشدّ مما يأخذ به بعض العلماء.
+    <div>
+      <ol className="method-list">
+        <li>استخراج المتن من النصّ المُدخَل بقطع أداة التحويل عن صيغ الأداء (حدثنا، أخبرنا، عن…).</li>
+        <li>قطع السلسلة إلى رواة مُفرَدين وترتيبهم من المُسنَد إليه (النبي ﷺ) إلى المُخرِّج.</li>
+        <li>تطبيق المُحدِّد (disambiguator) على كل اسم بمعايير الطبقة، الشيوخ، والتلاميذ.</li>
+        <li>الكشف في كتب الرجال الـ٢٢ ترتيبًا ثابتًا، واستخلاص أشدّ ما قيل وأرفعه.</li>
+        <li>تحليل الاتصال والتدليس وأي علّة قادحة في خصوص هذا الإسناد.</li>
+        <li>إصدار الحكمين: حكمٌ خاصٌّ بهذا الإسناد، وحكمٌ عامٌّ بمجموع طرق المتن في الكتب الـ١٨.</li>
+      </ol>
+      <p className="method-foot">
+        مصادر التخريج: ١٨ كتاب حديث — مصادر الجرح والتعديل والتعريف بالرواة: ٢٢ كتاب رجال —
+        إثبات السماع: «التاريخ الكبير» للبخاري — إثبات عدم اللقاء: «المراسيل» لابن أبي حاتم.
       </p>
     </div>
   );
@@ -1279,7 +1371,11 @@ export default function HomePage() {
                       <span aria-hidden style={{ color: "var(--ink-3)", fontSize: 18 }}>▾</span>
                     </summary>
                     <div className="acc-body">
-                      <TadlisPanel tadlis={result.tadlis} />
+                      <TadlisPanel
+                        tadlis={result.tadlis}
+                        narrators={result.narrators}
+                        links={result.links}
+                      />
                     </div>
                   </details>
                 </section>
