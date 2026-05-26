@@ -1090,6 +1090,60 @@ export async function matchChain(rawText: string): Promise<MatchResult> {
   const corpus_matches = matn ? await findHadithMatches(matn) : [];
   const aligned = corpus_matches.length > 0 ? await alignAndCount(corpus_matches) : null;
 
+  // Matn-only input (no isnād pasted): return a result that has just the
+  // corpus matches + a needs_review verdict. The UI shows the matches with
+  // a "تدقيق بإسناد هذا الكتاب" CTA so the user can re-audit using one of
+  // the book chains.
+  if (branchInputs.length === 0) {
+    const matnOnlyResult: MatchResult = {
+      branches: [],
+      has_multiple_branches: false,
+      itibar_note: null,
+      narrators: [],
+      links: [],
+      chain_verdict: "needs_review",
+      chain_reason:
+        "ما لصقتَه نصُّ المتن دون السلسلة الكاملة — لا يُمكن الحكم على الإسناد. " +
+        "اضغط على «تدقيق بإسناد هذا الكتاب» بجانب أحد المواضع أدناه ليُعاد الفحص.",
+      matn,
+      corpus_matches,
+      nisbah: {
+        type: "unknown",
+        label: "غير معروف",
+        reason: "النِّسبة تحتاج إلى الإسناد (الراوي الأخير) — لم يُلصق إسنادٌ بعدُ.",
+      },
+      tadlis: {
+        instances: [],
+        hasIsnad: false,
+        hasTaswiya: false,
+        shuyukhNote:
+          "كشف تدليس الشيوخ آليًّا يحتاج إلى قاعدة بيانات للأسماء الغامضة — غير متوفِّر حاليًا.",
+      },
+      number: {
+        type: "unknown",
+        label: "غير معروف",
+        reason: "عدد الطرق يحتاج إلى الإسناد للمقارنة — لم يُلصق إسنادٌ بعدُ.",
+        corpusOccurrences: corpus_matches.length,
+        distinctBooks: new Set(corpus_matches.map((m) => m.book_id)).size,
+        spread: [],
+      },
+      saqt: { type: "none", label: "—", reason: "—" },
+      rank: {
+        type: "unknown",
+        label: "—",
+        reason: "—",
+      } as unknown as RankClassification,
+      acceptance: {
+        type: "unknown",
+        label: "—",
+        reason: "—",
+      } as unknown as AcceptanceClassification,
+      tanByNarrator: [],
+    };
+    await setCached(hash, matnOnlyResult);
+    return matnOnlyResult;
+  }
+
   // Process every branch (single-chain hadiths still go through this loop
   // with branchInputs.length === 1).
   const branchOutputs = await Promise.all(

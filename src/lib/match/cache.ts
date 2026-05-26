@@ -26,7 +26,14 @@ import type { MatchResult } from "./matcher";
 //         ingestion completed (7,594 attestation_verb rows now loaded).
 //   v14 — book key → Arabic title mapping now uses canonical lib/sources;
 //         Prophet→Companion link rendered as clean ṣuḥba note.
-const CACHE_VERSION = "v14";
+//   v15 — verdict layout restructured to prototype: tier-row key-val pairs +
+//         ✓/✗ checklist for the 5 classical conditions of ḥadīth ṣaḥīḥ.
+//   v16 — غرابة (number-class) reason now walks narrator-by-narrator
+//         ("تفرّد به X عن Y، ثم تفرّد به A عن B…") instead of dumping the
+//         level-summary digits.
+//   v17 — matn-only inputs (no isnād) no longer throw; return corpus matches
+//         + needs_review verdict so user can re-audit using a book's chain.
+const CACHE_VERSION = "v17";
 
 /** Stable cache key for a pasted isnād. Includes a policy version so that
  *  shape/verdict changes auto-invalidate without manual cache wipes. */

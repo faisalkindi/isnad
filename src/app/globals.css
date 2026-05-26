@@ -530,6 +530,39 @@
 .shuyukh-death, .shuyukh-grade { color: var(--ink-2); }
 .shuyukh-sources { color: var(--ink-3); font-size: 12px; }
 
+/* ═══════════════════ Tier row (verdict key-val grid) ═══════════════════ */
+.tier-row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 12px;
+  align-items: baseline;
+  margin: 8px 0;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--rule);
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+.tier-row:last-of-type { border-bottom: none; }
+.tier-key {
+  color: var(--ink-3);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.tier-val {
+  color: var(--ink-1);
+}
+.tier-tick {
+  color: var(--green-500, oklch(0.55 0.12 145));
+  font-weight: 800;
+  margin-inline-end: 6px;
+}
+.tier-cross {
+  color: var(--red-500, oklch(0.55 0.18 30));
+  font-weight: 800;
+  margin-inline-end: 6px;
+}
+
 /* ═══════════════════ Share-on-X box ═══════════════════ */
 .share-card { background: var(--paper-raised); }
 .share-counter {

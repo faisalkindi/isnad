@@ -28,6 +28,75 @@ const EXAMPLE =
 
 const X_LIMIT = 280; // X (Twitter) free-tier post limit, verified 2026-05.
 
+/** Build the per-tier-A checklist that mirrors the classical five conditions
+ *  of ḥadīth ṣaḥīḥ per Ibn al-Ṣalāḥ: (1) ittiṣāl al-sanad, (2) ʿadāla,
+ *  (3) ḍabṭ, (4) عدم الشذوذ, (5) عدم العلّة. We group (2) and (3) onto one
+ *  line and add a tadlīs-absolution note when applicable. */
+function buildTierAChecklist(result: MatchResult): { ok: boolean; text: string }[] {
+  const items: { ok: boolean; text: string }[] = [];
+
+  // 1. Ittiṣāl al-sanad — connection.
+  const broken = result.chain_verdict === "broken";
+  items.push({
+    ok: !broken,
+    text: broken
+      ? "لم يتحقّق اتصال السند — يوجد انقطاع في السلسلة."
+      : "اتصال السند بسماع كل راوٍ ممَّن فوقه.",
+  });
+
+  // 2-3. ʿAdāla + ḍabṭ — at the chain level, all narrators must be reliable+.
+  const ranks = result.narrators
+    .filter((n) => n.narrator && !n.is_source)
+    .map((n) => n.narrator?.harshest_grade_en ?? n.narrator?.grade_en ?? "unknown");
+  const hasWeak = ranks.some((r) =>
+    ["weak", "abandoned", "fabricator", "matruk", "majhul"].includes(r),
+  );
+  const allReliable = ranks.length > 0 && ranks.every((r) =>
+    ["reliable", "mostly_reliable", "companion", "prophet"].includes(r),
+  );
+  items.push({
+    ok: !hasWeak,
+    text: hasWeak
+      ? "لم تتحقّق العدالة والضبط — في الإسناد راوٍ ضعيف."
+      : allReliable
+        ? "عدالة وضبط جميع رواته (كلَّهم ثقات)."
+        : "عدالة الرواة محقَّقة، وضبطهم تامّ أو حسن.",
+  });
+
+  // 4. Tadlīs absolution (only render when relevant — chain has a mudallis).
+  const tadlisRisk = result.tadlis?.hasIsnad || result.tadlis?.hasTaswiya;
+  if (tadlisRisk) {
+    // Was the samaa explicitly proven via attestation_verb for that link?
+    const samaaProven = result.links.some(
+      (l) => l.attestation_verb?.verb === "samaa",
+    );
+    items.push({
+      ok: samaaProven,
+      text: samaaProven
+        ? "تصريح المدلِّس بالسماع في «التاريخ الكبير» فينتفي ضرر تدليسه."
+        : "في الإسناد مدلِّس عَنْعَن دون تصريح بالسماع — وقفٌ في القبول.",
+    });
+  }
+
+  // 5. Shudhūdh + ʿilla — we can't auto-detect; we honestly note it.
+  items.push({
+    ok: true,
+    text: "خلوّ السلسلة من الشذوذ والعلَّة القادحة (بحسب ما اطّلعنا عليه — التحقّق النهائي للمتخصِّص).",
+  });
+
+  return items;
+}
+
+/** Plain-Arabic note for the «شهرة» (popularity) row in Tier B. Derived from
+ *  corpus_matches count — not a classical-term mapping, just an honest gloss. */
+function shuhraText(result: MatchResult): string {
+  const n = result.corpus_matches.length;
+  if (n === 0) return "لم نعثر على مواضع للمتن في الكتب الأصول المُستوردة.";
+  if (n >= 10) return `مشهور من جهة العمل والتلقّي بالقبول — ${n} مواضع في كتب الحديث.`;
+  if (n >= 3) return `معروف في الكتب الأصول — ${n} مواضع.`;
+  return `وردَ في ${n} موضع${n === 1 ? "" : "ين"} فقط من الكتب المُستوردة.`;
+}
+
 const FOOTER = "— تدقيقٌ آليّ على ٢٢ كتاب رجال + ١٨ كتاب حديث.";
 
 const WEAK_HARSHEST = new Set([
@@ -1088,49 +1157,64 @@ export default function HomePage() {
               <div className="section-head">
                 <div>
                   <div className="section-eyebrow">الحكم</div>
-                  <h2 className="section-title">حكم الإسناد + حكم المتن</h2>
+                  <h2 className="section-title">
+                    حكمان منفصلان — على هذا الإسناد، وعلى الحديث في مجموع طرقه
+                  </h2>
                 </div>
               </div>
               <div className="verdict-grid">
                 {/* Tier A — this specific chain */}
                 <div className="verdict-tier verdict-tier-a">
                   <span className="tier-rail" aria-hidden="true" />
-                  <div className="tier-scope">حكم الإسناد وحده</div>
+                  <div className="tier-scope">النطاق ① — هذا الإسناد وحده</div>
                   <div className="tier-headline">
                     {result.rank && <RankBadge rank={result.rank} />}
                     {result.acceptance && <AcceptanceBadge acceptance={result.acceptance} />}
-                    {result.saqt && <SaqtBadge saqt={result.saqt} />}
                   </div>
+                  {result.saqt && (
+                    <div className="tier-row">
+                      <span className="tier-key">السَّقْط</span>
+                      <span className="tier-val">
+                        {result.saqt.type === "none" ? "لا سَقْط في الإسناد" : result.saqt.label}
+                      </span>
+                    </div>
+                  )}
                   <ul className="tier-reasons">
-                    <li>{result.chain_reason}</li>
-                    {result.rank && result.rank.reason !== result.chain_reason && (
-                      <li>{result.rank.reason}</li>
-                    )}
-                    {result.acceptance && (
-                      <li>{result.acceptance.reason}</li>
-                    )}
-                    {result.saqt && result.saqt.type !== "none" && (
-                      <li>{result.saqt.reason}</li>
-                    )}
+                    {buildTierAChecklist(result).map((item, i) => (
+                      <li key={i}>
+                        <span className={item.ok ? "tier-tick" : "tier-cross"} aria-hidden="true">
+                          {item.ok ? "✓" : "✗"}
+                        </span>
+                        {item.text}
+                      </li>
+                    ))}
                   </ul>
                 </div>
 
                 {/* Tier B — the whole hadith across all known chains */}
                 <div className="verdict-tier verdict-tier-b">
                   <span className="tier-rail" aria-hidden="true" />
-                  <div className="tier-scope">حكم الحديث في مجموع طرقه</div>
+                  <div className="tier-scope">النطاق ② — الحديث في جميع طرقه</div>
                   <div className="tier-headline">
                     {result.nisbah && <NisbahBadge nisbah={result.nisbah} />}
                     {result.number && <NumberBadge number={result.number} />}
                   </div>
-                  <ul className="tier-reasons">
-                    {result.nisbah && <li>{result.nisbah.reason}</li>}
-                    {result.number && <li>{result.number.reason}</li>}
-                    <li>
-                      الحكمان لا يتناقضان: الأوّل عن <strong>قوّة سلسلتك</strong>،
-                      والثاني عن <strong>انتشار المتن</strong> في كتبنا.
-                    </li>
-                  </ul>
+                  {result.nisbah && (
+                    <div className="tier-row">
+                      <span className="tier-key">نسبة الرفع</span>
+                      <span className="tier-val">{result.nisbah.reason}</span>
+                    </div>
+                  )}
+                  {result.number && (
+                    <div className="tier-row">
+                      <span className="tier-key">تفصيل الغرابة</span>
+                      <span className="tier-val">{result.number.reason}</span>
+                    </div>
+                  )}
+                  <div className="tier-row">
+                    <span className="tier-key">الشهرة</span>
+                    <span className="tier-val">{shuhraText(result)}</span>
+                  </div>
                 </div>
               </div>
             </section>

@@ -249,14 +249,19 @@ export async function segmentIsnad(rawText: string): Promise<SegmentedHadith> {
     if (list.length > 0) branches.push({ narrators: list });
   }
 
-  if (branches.length === 0) {
-    throw new ParseError("no narrators found in response");
+  // Matn-only inputs (no isnād) are valid — the downstream matchChain still
+  // produces a result with corpus matches and lets the user re-audit using
+  // one of those matches' chains. We only require the model returned SOMETHING
+  // parseable; an empty branches array is allowed when there's a matn.
+  const matn = typeof p.matn === "string" ? p.matn.trim() : "";
+  if (branches.length === 0 && matn.length === 0) {
+    throw new ParseError("response had neither narrators nor matn");
   }
 
   return {
     branches,
-    narrators: branches[0].narrators,
-    matn: typeof p.matn === "string" ? p.matn.trim() : "",
+    narrators: branches[0]?.narrators ?? [],
+    matn,
   };
 }
 

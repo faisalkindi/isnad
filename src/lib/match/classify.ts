@@ -38,6 +38,7 @@ import type {
 
 import type { HadithMatch as _HadithMatch } from "./matcher";
 import type { AlignedChains } from "./chain-align";
+import { shortName } from "../names";
 
 export type NumberClass =
   | "mutawatir"
@@ -184,14 +185,14 @@ export function classifyByNumber(
   }
   // minCount === 1: غريب. مطلق إن كان التفرُّد عند الصحابي (الأصل)، وإلا نسبي.
   const isAtSource = narrowestLevel === 0;
+  const narrative = buildGharibNarrative(chronological, isAtSource && sourceIsCompanion);
   if (isAtSource && sourceIsCompanion) {
     return {
       type: "gharib_mutlaq",
       label: NUMBER_LABEL.gharib_mutlaq,
-      reason:
-        `تفرَّد بروايته راوٍ واحد عند المصدر (الصحابي «${bottleneckExample}») — غرابة مطلقة. ` +
-        `حتى لو كثُرت طرقه لاحقًا، فمصدره فردٌ واحد. ` +
-        `بفحص ${totalChains} طرق في ${distinctBooks} كتب: ${levelSummary}.`,
+      reason: narrative
+        ? `${narrative} — فهو فرد مطلق.`
+        : `تفرَّد بروايته راوٍ واحد عند المصدر (الصحابي «${bottleneckExample}») — غرابة مطلقة.`,
       corpusOccurrences: totalChains,
       distinctBooks,
       spread,
@@ -200,14 +201,46 @@ export function classifyByNumber(
   return {
     type: "gharib_nisbi",
     label: NUMBER_LABEL.gharib_nisbi,
-    reason:
-      `تفرَّد بروايته راوٍ واحد عند طبقة ${narrowestLevel + 1} (مثال: «${bottleneckExample}») — غرابة نسبية. ` +
-      `حتى مع وجود ${totalChains} طريقًا في ${distinctBooks} كتب من كتبنا، فإنها كلها تمرّ بهذا الراوي المنفرد. ` +
-      `توزيع الطبقات: ${levelSummary}.`,
+    reason: narrative
+      ? `${narrative} — فهو فرد نسبي (تَفرُّد عند طبقة ${narrowestLevel + 1}).`
+      : `تفرَّد بروايته راوٍ واحد عند طبقة ${narrowestLevel + 1} (مثال: «${bottleneckExample}») — غرابة نسبية.`,
     corpusOccurrences: totalChains,
     distinctBooks,
     spread,
   };
+}
+
+/** Build the narrative «تفرّد به X عن Y، ثم تفرّد به A عن B …» by walking
+ *  the chronological chain. When `isMarfu`, the first link is "عن النبي ﷺ"
+ *  even though the Prophet isn't in `chronological` (he's id=-1, filtered).
+ *  Returns null if the chain is too short to narrate. */
+function buildGharibNarrative(
+  chronological: MatchedNarrator[],
+  startsAtCompanion: boolean,
+): string | null {
+  if (chronological.length < 2) return null;
+  const links: string[] = [];
+  for (let i = 0; i < chronological.length; i++) {
+    const studentN = chronological[i].narrator;
+    if (!studentN) continue;
+    const student = shortName(studentN.full_name);
+    let teacher: string;
+    if (i === 0) {
+      if (!startsAtCompanion) continue; // only narrate the X←Prophet leg when sahabi source
+      teacher = "النبي ﷺ";
+    } else {
+      const teacherN = chronological[i - 1].narrator;
+      if (!teacherN) continue;
+      teacher = shortName(teacherN.full_name);
+    }
+    links.push(
+      links.length === 0
+        ? `تفرَّد به ${student} عن ${teacher}`
+        : `ثم تفرَّد به ${student} عن ${teacher}`,
+    );
+  }
+  if (links.length === 0) return null;
+  return links.join("، ");
 }
 
 // ---------- (2) saqṭ type — type of break for a broken chain ----------
